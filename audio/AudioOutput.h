@@ -12,25 +12,30 @@
 #include <vector>
 #include "../MediaStreamItf.h"
 
-namespace tgvoip{
+namespace tgvoip
+{
 
 class AudioInputDevice;
 class AudioOutputDevice;
-	
-namespace audio{
-class AudioOutput : public MediaStreamItf{
+
+namespace audio
+{
+class AudioOutput : public MediaStreamItf {
 public:
 	AudioOutput();
 	AudioOutput(std::string deviceID);
 	virtual ~AudioOutput();
-	virtual void Configure(uint32_t sampleRate, uint32_t bitsPerSample, uint32_t channels)=0;
-	virtual bool IsPlaying()=0;
-    virtual float GetLevel();
+	virtual void Configure(uint32_t sampleRate,
+	                       uint32_t bitsPerSample, uint32_t channels) = 0;
+	virtual bool IsPlaying() = 0;
+	virtual float GetLevel();
 	static int32_t GetEstimatedDelay();
 	virtual std::string GetCurrentDevice();
-	virtual void SetCurrentDevice(std::string deviceID);
-	static AudioOutput* Create(std::string deviceID);
-	static void EnumerateDevices(std::vector<AudioOutputDevice>& devs);
+	virtual void SetCurrentDevice(std::string
+	                              deviceID);
+	static AudioOutput *Create(std::string deviceID);
+	static void EnumerateDevices(
+	    std::vector<AudioOutputDevice> &devs);
 	bool IsInitialized();
 
 #if defined(__ANDROID__)
@@ -42,6 +47,7 @@ protected:
 	bool failed;
 	static int32_t estimatedDelay;
 };
-}}
+}
+}
 
 #endif //LIBTGVOIP_AUDIOOUTPUT_H

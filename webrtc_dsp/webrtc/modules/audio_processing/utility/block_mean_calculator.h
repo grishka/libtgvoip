@@ -15,36 +15,37 @@
 
 #include "webrtc/base/constructormagic.h"
 
-namespace webrtc {
+namespace webrtc
+{
 
 // BlockMeanCalculator calculates the mean of a block of values. Values are
 // added one after another, and the mean is updated at the end of every block.
 class BlockMeanCalculator {
- public:
-  explicit BlockMeanCalculator(size_t block_length);
+public:
+	explicit BlockMeanCalculator(size_t block_length);
 
-  // Reset.
-  void Reset();
+	// Reset.
+	void Reset();
 
-  // Add one value to the sequence.
-  void AddValue(float value);
+	// Add one value to the sequence.
+	void AddValue(float value);
 
-  // Return whether the latest added value was at the end of a block.
-  bool EndOfBlock() const;
+	// Return whether the latest added value was at the end of a block.
+	bool EndOfBlock() const;
 
-  // Return the latest mean.
-  float GetLatestMean() const;
+	// Return the latest mean.
+	float GetLatestMean() const;
 
- private:
-  // Clear all values added.
-  void Clear();
+private:
+	// Clear all values added.
+	void Clear();
 
-  const size_t block_length_;
-  size_t count_;
-  float sum_;
-  float mean_;
+	const size_t block_length_;
+	size_t count_;
+	float sum_;
+	float mean_;
 
-  RTC_DISALLOW_COPY_AND_ASSIGN(BlockMeanCalculator);
+	RTC_DISALLOW_COPY_AND_ASSIGN(BlockMeanCalculator);
 };
 
 }  // namespace webrtc

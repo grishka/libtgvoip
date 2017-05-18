@@ -41,7 +41,7 @@
 #define SF_FEATURE_THR      (float)0.5  // default threshold for Spectral Flatness feature
 #define SD_FEATURE_THR      (float)0.5  // default threshold for Spectral Difference feature
 #define PROB_RANGE          (float)0.20 // probability threshold for noise state in
-                                        // speech/noise likelihood
+// speech/noise likelihood
 #define HIST_PAR_EST         1000       // histogram size for estimation of parameters
 #define GAMMA_PAUSE         (float)0.05 // update for conservative noise estimate
 //

@@ -20,16 +20,18 @@
 #define TGVOIP_CONCTL_ACT_DECREASE 2
 #define TGVOIP_CONCTL_ACT_NONE 0
 
-namespace tgvoip{
+namespace tgvoip
+{
 
-struct tgvoip_congestionctl_packet_t{
+struct tgvoip_congestionctl_packet_t {
 	uint32_t seq;
 	double sendTime;
 	size_t size;
 };
-typedef struct tgvoip_congestionctl_packet_t tgvoip_congestionctl_packet_t;
+typedef struct tgvoip_congestionctl_packet_t
+	tgvoip_congestionctl_packet_t;
 
-class CongestionControl{
+class CongestionControl {
 public:
 	CongestionControl();
 	~CongestionControl();
@@ -48,7 +50,8 @@ public:
 
 private:
 	double rttHistory[100];
-	tgvoip_congestionctl_packet_t inflightPackets[100];
+	tgvoip_congestionctl_packet_t
+	inflightPackets[100];
 	size_t inflightHistory[30];
 	int state;
 	uint32_t lossCount;

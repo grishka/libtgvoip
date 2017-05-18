@@ -24,7 +24,7 @@ extern "C" {
 /*
  * This function creates an instance of the fixed point Noise Suppression.
  */
-NsxHandle* WebRtcNsx_Create();
+NsxHandle *WebRtcNsx_Create();
 
 /*
  * This function frees the dynamic memory of a specified Noise Suppression
@@ -33,7 +33,7 @@ NsxHandle* WebRtcNsx_Create();
  * Input:
  *      - nsxInst       : Pointer to NS instance that should be freed
  */
-void WebRtcNsx_Free(NsxHandle* nsxInst);
+void WebRtcNsx_Free(NsxHandle *nsxInst);
 
 /*
  * This function initializes a NS instance
@@ -48,7 +48,8 @@ void WebRtcNsx_Free(NsxHandle* nsxInst);
  * Return value         :  0 - Ok
  *                        -1 - Error
  */
-int WebRtcNsx_Init(NsxHandle* nsxInst, uint32_t fs);
+int WebRtcNsx_Init(NsxHandle *nsxInst,
+                   uint32_t fs);
 
 /*
  * This changes the aggressiveness of the noise suppression method.
@@ -63,7 +64,8 @@ int WebRtcNsx_Init(NsxHandle* nsxInst, uint32_t fs);
  * Return value         :  0 - Ok
  *                        -1 - Error
  */
-int WebRtcNsx_set_policy(NsxHandle* nsxInst, int mode);
+int WebRtcNsx_set_policy(NsxHandle *nsxInst,
+                         int mode);
 
 /*
  * This functions does noise suppression for the inserted speech frame. The
@@ -78,10 +80,10 @@ int WebRtcNsx_set_policy(NsxHandle* nsxInst, int mode);
  *      - nsxInst       : Updated NSx instance
  *      - outFrame      : Pointer to output frame for each band
  */
-void WebRtcNsx_Process(NsxHandle* nsxInst,
-                       const short* const* speechFrame,
+void WebRtcNsx_Process(NsxHandle *nsxInst,
+                       const short *const *speechFrame,
                        int num_bands,
-                       short* const* outFrame);
+                       short *const *outFrame);
 
 /* Returns a pointer to the noise estimate per frequency bin. The number of
  * frequency bins can be provided using WebRtcNsx_num_freq().
@@ -96,8 +98,9 @@ void WebRtcNsx_Process(NsxHandle* nsxInst,
  *                        Returns NULL if the input is a NULL pointer or an
  *                        uninitialized instance.
  */
-const uint32_t* WebRtcNsx_noise_estimate(const NsxHandle* nsxInst,
-                                         int* q_noise);
+const uint32_t *WebRtcNsx_noise_estimate(
+    const NsxHandle *nsxInst,
+    int *q_noise);
 
 /* Returns the number of frequency bins, which is the length of the noise
  * estimate for example.

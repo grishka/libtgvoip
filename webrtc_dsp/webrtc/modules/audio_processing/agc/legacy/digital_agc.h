@@ -24,56 +24,61 @@
   ((C) + ((B) >> 16) * (A) + (((0x0000FFFF & (B)) * (A)) >> 16))
 
 typedef struct {
-  int32_t downState[8];
-  int16_t HPstate;
-  int16_t counter;
-  int16_t logRatio;           // log( P(active) / P(inactive) ) (Q10)
-  int16_t meanLongTerm;       // Q10
-  int32_t varianceLongTerm;   // Q8
-  int16_t stdLongTerm;        // Q10
-  int16_t meanShortTerm;      // Q10
-  int32_t varianceShortTerm;  // Q8
-  int16_t stdShortTerm;       // Q10
+	int32_t downState[8];
+	int16_t HPstate;
+	int16_t counter;
+	int16_t logRatio;           // log( P(active) / P(inactive) ) (Q10)
+	int16_t meanLongTerm;       // Q10
+	int32_t varianceLongTerm;   // Q8
+	int16_t stdLongTerm;        // Q10
+	int16_t meanShortTerm;      // Q10
+	int32_t varianceShortTerm;  // Q8
+	int16_t stdShortTerm;       // Q10
 } AgcVad;                     // total = 54 bytes
 
 typedef struct {
-  int32_t capacitorSlow;
-  int32_t capacitorFast;
-  int32_t gain;
-  int32_t gainTable[32];
-  int16_t gatePrevious;
-  int16_t agcMode;
-  AgcVad vadNearend;
-  AgcVad vadFarend;
+	int32_t capacitorSlow;
+	int32_t capacitorFast;
+	int32_t gain;
+	int32_t gainTable[32];
+	int16_t gatePrevious;
+	int16_t agcMode;
+	AgcVad vadNearend;
+	AgcVad vadFarend;
 #ifdef WEBRTC_AGC_DEBUG_DUMP
-  FILE* logFile;
-  int frameCounter;
+	FILE *logFile;
+	int frameCounter;
 #endif
 } DigitalAgc;
 
-int32_t WebRtcAgc_InitDigital(DigitalAgc* digitalAgcInst, int16_t agcMode);
+int32_t WebRtcAgc_InitDigital(DigitalAgc *
+                              digitalAgcInst, int16_t agcMode);
 
-int32_t WebRtcAgc_ProcessDigital(DigitalAgc* digitalAgcInst,
-                                 const int16_t* const* inNear,
+int32_t WebRtcAgc_ProcessDigital(DigitalAgc *
+                                 digitalAgcInst,
+                                 const int16_t *const *inNear,
                                  size_t num_bands,
-                                 int16_t* const* out,
+                                 int16_t *const *out,
                                  uint32_t FS,
                                  int16_t lowLevelSignal);
 
-int32_t WebRtcAgc_AddFarendToDigital(DigitalAgc* digitalAgcInst,
-                                     const int16_t* inFar,
-                                     size_t nrSamples);
+int32_t WebRtcAgc_AddFarendToDigital(
+    DigitalAgc *digitalAgcInst,
+    const int16_t *inFar,
+    size_t nrSamples);
 
-void WebRtcAgc_InitVad(AgcVad* vadInst);
+void WebRtcAgc_InitVad(AgcVad *vadInst);
 
-int16_t WebRtcAgc_ProcessVad(AgcVad* vadInst,    // (i) VAD state
-                             const int16_t* in,  // (i) Speech signal
+int16_t WebRtcAgc_ProcessVad(AgcVad *
+                             vadInst,    // (i) VAD state
+                             const int16_t *in,  // (i) Speech signal
                              size_t nrSamples);  // (i) number of samples
 
-int32_t WebRtcAgc_CalculateGainTable(int32_t* gainTable,         // Q16
-                                     int16_t compressionGaindB,  // Q0 (in dB)
-                                     int16_t targetLevelDbfs,    // Q0 (in dB)
-                                     uint8_t limiterEnable,
-                                     int16_t analogTarget);
+int32_t WebRtcAgc_CalculateGainTable(
+    int32_t *gainTable,         // Q16
+    int16_t compressionGaindB,  // Q0 (in dB)
+    int16_t targetLevelDbfs,    // Q0 (in dB)
+    uint8_t limiterEnable,
+    int16_t analogTarget);
 
 #endif  // WEBRTC_MODULES_AUDIO_PROCESSING_AGC_LEGACY_DIGITAL_AGC_H_

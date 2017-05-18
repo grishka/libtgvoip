@@ -13,22 +13,25 @@
 
 using namespace Microsoft::WRL;
 
-namespace tgvoip {
+namespace tgvoip
+{
 
-	class ActivationHandler :
-		public RuntimeClass< RuntimeClassFlags< ClassicCom >, FtmBase, IActivateAudioInterfaceCompletionHandler >
-	{
-	public:
-		STDMETHOD(ActivateCompleted)(IActivateAudioInterfaceAsyncOperation *operation);
+class ActivationHandler :
+	public RuntimeClass< RuntimeClassFlags< ClassicCom >, FtmBase, IActivateAudioInterfaceCompletionHandler > {
+public:
+	STDMETHOD(ActivateCompleted)(
+	    IActivateAudioInterfaceAsyncOperation *operation);
 
-		ActivationHandler(HANDLE _event);
-		HANDLE event;
-		IAudioClient* client;
-		HRESULT actResult;
-	};
+	ActivationHandler(HANDLE _event);
+	HANDLE event;
+	IAudioClient *client;
+	HRESULT actResult;
+};
 
-	class WindowsSandboxUtils {
-	public:
-		static IAudioClient* ActivateAudioDevice(const wchar_t* devID, HRESULT* callResult, HRESULT* actResult);
-	};
+class WindowsSandboxUtils {
+public:
+	static IAudioClient *ActivateAudioDevice(
+	    const wchar_t *devID, HRESULT *callResult,
+	    HRESULT *actResult);
+};
 }

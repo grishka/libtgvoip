@@ -32,40 +32,40 @@
 /* Energy parameters */
 #define MAX_BUF_LEN     64           /* History length of energy signals. */
 #define FAR_ENERGY_MIN  1025         /* Lowest Far energy level: At least 2 */
-                                     /* in energy. */
+/* in energy. */
 #define FAR_ENERGY_DIFF 929          /* Allowed difference between max */
-                                     /* and min. */
+/* and min. */
 #define ENERGY_DEV_OFFSET       0    /* The energy error offset in Q8. */
 #define ENERGY_DEV_TOL  400          /* The energy estimation tolerance (Q8). */
 #define FAR_ENERGY_VAD_REGION   230  /* Far VAD tolerance region. */
 
 /* Stepsize parameters */
 #define MU_MIN          10          /* Min stepsize 2^-MU_MIN (far end energy */
-                                    /* dependent). */
+/* dependent). */
 #define MU_MAX          1           /* Max stepsize 2^-MU_MAX (far end energy */
-                                    /* dependent). */
+/* dependent). */
 #define MU_DIFF         9           /* MU_MIN - MU_MAX */
 
 /* Channel parameters */
 #define MIN_MSE_COUNT   20 /* Min number of consecutive blocks with enough */
-                           /* far end energy to compare channel estimates. */
+/* far end energy to compare channel estimates. */
 #define MIN_MSE_DIFF    29 /* The ratio between adapted and stored channel to */
-                           /* accept a new storage (0.8 in Q-MSE_RESOLUTION). */
+/* accept a new storage (0.8 in Q-MSE_RESOLUTION). */
 #define MSE_RESOLUTION  5           /* MSE parameter resolution. */
 #define RESOLUTION_CHANNEL16    12  /* W16 Channel in Q-RESOLUTION_CHANNEL16. */
 #define RESOLUTION_CHANNEL32    28  /* W32 Channel in Q-RESOLUTION_CHANNEL. */
 #define CHANNEL_VAD     16          /* Minimum energy in frequency band */
-                                    /* to update channel. */
+/* to update channel. */
 
 /* Suppression gain parameters: SUPGAIN parameters in Q-(RESOLUTION_SUPGAIN). */
 #define RESOLUTION_SUPGAIN      8     /* Channel in Q-(RESOLUTION_SUPGAIN). */
 #define SUPGAIN_DEFAULT (1 << RESOLUTION_SUPGAIN)  /* Default. */
 #define SUPGAIN_ERROR_PARAM_A   3072  /* Estimation error parameter */
-                                      /* (Maximum gain) (8 in Q8). */
+/* (Maximum gain) (8 in Q8). */
 #define SUPGAIN_ERROR_PARAM_B   1536  /* Estimation error parameter */
-                                      /* (Gain before going down). */
+/* (Gain before going down). */
 #define SUPGAIN_ERROR_PARAM_D   SUPGAIN_DEFAULT /* Estimation error parameter */
-                                /* (Should be the same as Default) (1 in Q8). */
+/* (Should be the same as Default) (1 in Q8). */
 #define SUPGAIN_EPC_DT  200     /* SUPGAIN_ERROR_PARAM_C * ENERGY_DEV_TOL */
 
 /* Defines for "check delay estimation" */

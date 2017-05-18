@@ -17,39 +17,42 @@
 #include "JitterBuffer.h"
 #include <stdio.h>
 
-namespace tgvoip{
+namespace tgvoip
+{
 class OpusDecoder {
 public:
 	virtual void Start();
 
 	virtual void Stop();
 
-	OpusDecoder(MediaStreamItf* dst);
+	OpusDecoder(MediaStreamItf *dst);
 	virtual ~OpusDecoder();
-	void HandleCallback(unsigned char* data, size_t len);
-	void SetEchoCanceller(EchoCanceller* canceller);
+	void HandleCallback(unsigned char *data,
+	                    size_t len);
+	void SetEchoCanceller(EchoCanceller *canceller);
 	void SetFrameDuration(uint32_t duration);
 	void ResetQueue();
-	void SetJitterBuffer(JitterBuffer* jitterBuffer);
+	void SetJitterBuffer(JitterBuffer *jitterBuffer);
 
 private:
-	static size_t Callback(unsigned char* data, size_t len, void* param);
-	static void* StartThread(void* param);
+	static size_t Callback(unsigned char *data,
+	                       size_t len, void *param);
+	static void *StartThread(void *param);
 	void RunThread();
-	::OpusDecoder* dec;
-	BlockingQueue* decodedQueue;
-	BufferPool* bufferPool;
-	unsigned char* buffer;
-	unsigned char* lastDecoded;
+	::OpusDecoder *dec;
+	BlockingQueue *decodedQueue;
+	BufferPool *bufferPool;
+	unsigned char *buffer;
+	unsigned char *lastDecoded;
 	size_t lastDecodedLen, lastDecodedOffset;
 	size_t outputBufferSize;
 	bool running;
-    tgvoip_thread_t thread;
+	tgvoip_thread_t thread;
 	Semaphore semaphore;
 	tgvoip_mutex_t mutex;
 	uint32_t frameDuration;
-	EchoCanceller* echoCanceller;
-	JitterBuffer* jitterBuffer;
+	EchoCanceller *echoCanceller;
+	JitterBuffer *jitterBuffer;
 };
 }
 

@@ -13,7 +13,8 @@
 #include <TargetConditionals.h>
 #endif
 
-void tgvoip_log_file_printf(char level, const char* msg, ...);
+void tgvoip_log_file_printf(char level,
+                            const char *msg, ...);
 void tgvoip_log_file_write_header();
 
 #if defined(__ANDROID__)

@@ -9,10 +9,11 @@
 
 #include <string>
 
-namespace tgvoip {
-class DarwinSpecific{
+namespace tgvoip
+{
+class DarwinSpecific {
 public:
-	static void GetSystemName(char* buf, size_t len);
+	static void GetSystemName(char *buf, size_t len);
 };
 }
 

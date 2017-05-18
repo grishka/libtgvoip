@@ -19,78 +19,84 @@
 
 #include "webrtc/base/constructormagic.h"
 
-namespace webrtc {
+namespace webrtc
+{
 
 // Interface to provide access to WAV file parameters.
 class WavFile {
- public:
-  virtual ~WavFile() {}
+public:
+	virtual ~WavFile() {}
 
-  virtual int sample_rate() const = 0;
-  virtual size_t num_channels() const = 0;
-  virtual size_t num_samples() const = 0;
+	virtual int sample_rate() const = 0;
+	virtual size_t num_channels() const = 0;
+	virtual size_t num_samples() const = 0;
 
-  // Returns a human-readable string containing the audio format.
-  std::string FormatAsString() const;
+	// Returns a human-readable string containing the audio format.
+	std::string FormatAsString() const;
 };
 
 // Simple C++ class for writing 16-bit PCM WAV files. All error handling is
 // by calls to RTC_CHECK(), making it unsuitable for anything but debug code.
 class WavWriter final : public WavFile {
- public:
-  // Open a new WAV file for writing.
-  WavWriter(const std::string& filename, int sample_rate, size_t num_channels);
+public:
+	// Open a new WAV file for writing.
+	WavWriter(const std::string &filename,
+	          int sample_rate, size_t num_channels);
 
-  // Close the WAV file, after writing its header.
-  ~WavWriter() override;
+	// Close the WAV file, after writing its header.
+	~WavWriter() override;
 
-  // Write additional samples to the file. Each sample is in the range
-  // [-32768,32767], and there must be the previously specified number of
-  // interleaved channels.
-  void WriteSamples(const float* samples, size_t num_samples);
-  void WriteSamples(const int16_t* samples, size_t num_samples);
+	// Write additional samples to the file. Each sample is in the range
+	// [-32768,32767], and there must be the previously specified number of
+	// interleaved channels.
+	void WriteSamples(const float *samples,
+	                  size_t num_samples);
+	void WriteSamples(const int16_t *samples,
+	                  size_t num_samples);
 
-  int sample_rate() const override;
-  size_t num_channels() const override;
-  size_t num_samples() const override;
+	int sample_rate() const override;
+	size_t num_channels() const override;
+	size_t num_samples() const override;
 
- private:
-  void Close();
-  const int sample_rate_;
-  const size_t num_channels_;
-  size_t num_samples_;  // Total number of samples written to file.
-  FILE* file_handle_;  // Output file, owned by this class
+private:
+	void Close();
+	const int sample_rate_;
+	const size_t num_channels_;
+	size_t num_samples_;  // Total number of samples written to file.
+	FILE *file_handle_;  // Output file, owned by this class
 
-  RTC_DISALLOW_COPY_AND_ASSIGN(WavWriter);
+	RTC_DISALLOW_COPY_AND_ASSIGN(WavWriter);
 };
 
 // Follows the conventions of WavWriter.
 class WavReader final : public WavFile {
- public:
-  // Opens an existing WAV file for reading.
-  explicit WavReader(const std::string& filename);
+public:
+	// Opens an existing WAV file for reading.
+	explicit WavReader(const std::string &filename);
 
-  // Close the WAV file.
-  ~WavReader() override;
+	// Close the WAV file.
+	~WavReader() override;
 
-  // Returns the number of samples read. If this is less than requested,
-  // verifies that the end of the file was reached.
-  size_t ReadSamples(size_t num_samples, float* samples);
-  size_t ReadSamples(size_t num_samples, int16_t* samples);
+	// Returns the number of samples read. If this is less than requested,
+	// verifies that the end of the file was reached.
+	size_t ReadSamples(size_t num_samples,
+	                   float *samples);
+	size_t ReadSamples(size_t num_samples,
+	                   int16_t *samples);
 
-  int sample_rate() const override;
-  size_t num_channels() const override;
-  size_t num_samples() const override;
+	int sample_rate() const override;
+	size_t num_channels() const override;
+	size_t num_samples() const override;
 
- private:
-  void Close();
-  int sample_rate_;
-  size_t num_channels_;
-  size_t num_samples_;  // Total number of samples in the file.
-  size_t num_samples_remaining_;
-  FILE* file_handle_;  // Input file, owned by this class.
+private:
+	void Close();
+	int sample_rate_;
+	size_t num_channels_;
+	size_t num_samples_;  // Total number of samples in the file.
+	size_t num_samples_remaining_;
+	FILE *file_handle_;  // Input file, owned by this class.
 
-  RTC_DISALLOW_COPY_AND_ASSIGN(WavReader);
+	RTC_DISALLOW_COPY_AND_ASSIGN(WavReader);
 };
 
 }  // namespace webrtc
@@ -100,16 +106,17 @@ extern "C" {
 
 // C wrappers for the WavWriter class.
 typedef struct rtc_WavWriter rtc_WavWriter;
-rtc_WavWriter* rtc_WavOpen(const char* filename,
+rtc_WavWriter *rtc_WavOpen(const char *filename,
                            int sample_rate,
                            size_t num_channels);
-void rtc_WavClose(rtc_WavWriter* wf);
-void rtc_WavWriteSamples(rtc_WavWriter* wf,
-                         const float* samples,
+void rtc_WavClose(rtc_WavWriter *wf);
+void rtc_WavWriteSamples(rtc_WavWriter *wf,
+                         const float *samples,
                          size_t num_samples);
-int rtc_WavSampleRate(const rtc_WavWriter* wf);
-size_t rtc_WavNumChannels(const rtc_WavWriter* wf);
-size_t rtc_WavNumSamples(const rtc_WavWriter* wf);
+int rtc_WavSampleRate(const rtc_WavWriter *wf);
+size_t rtc_WavNumChannels(const rtc_WavWriter *
+                          wf);
+size_t rtc_WavNumSamples(const rtc_WavWriter *wf);
 
 #ifdef __cplusplus
 }  // extern "C"

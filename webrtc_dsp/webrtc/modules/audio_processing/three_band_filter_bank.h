@@ -17,7 +17,8 @@
 
 #include "webrtc/common_audio/sparse_fir_filter.h"
 
-namespace webrtc {
+namespace webrtc
+{
 
 // An implementation of a 3-band FIR filter-bank with DCT modulation, similar to
 // the proposed in "Multirate Signal Processing for Communication Systems" by
@@ -33,35 +34,39 @@ namespace webrtc {
 // analysis and synthesis (with no processing in between) is approximately 9.5dB
 // depending on the input signal after compensating for the delay.
 class ThreeBandFilterBank final {
- public:
-  explicit ThreeBandFilterBank(size_t length);
-  ~ThreeBandFilterBank();
+public:
+	explicit ThreeBandFilterBank(size_t length);
+	~ThreeBandFilterBank();
 
-  // Splits |in| into 3 downsampled frequency bands in |out|.
-  // |length| is the |in| length. Each of the 3 bands of |out| has to have a
-  // length of |length| / 3.
-  void Analysis(const float* in, size_t length, float* const* out);
+	// Splits |in| into 3 downsampled frequency bands in |out|.
+	// |length| is the |in| length. Each of the 3 bands of |out| has to have a
+	// length of |length| / 3.
+	void Analysis(const float *in, size_t length,
+	              float *const *out);
 
-  // Merges the 3 downsampled frequency bands in |in| into |out|.
-  // |split_length| is the length of each band of |in|. |out| has to have at
-  // least a length of 3 * |split_length|.
-  void Synthesis(const float* const* in, size_t split_length, float* out);
+	// Merges the 3 downsampled frequency bands in |in| into |out|.
+	// |split_length| is the length of each band of |in|. |out| has to have at
+	// least a length of 3 * |split_length|.
+	void Synthesis(const float *const *in,
+	               size_t split_length, float *out);
 
- private:
-  void DownModulate(const float* in,
-                    size_t split_length,
-                    size_t offset,
-                    float* const* out);
-  void UpModulate(const float* const* in,
-                  size_t split_length,
-                  size_t offset,
-                  float* out);
+private:
+	void DownModulate(const float *in,
+	                  size_t split_length,
+	                  size_t offset,
+	                  float *const *out);
+	void UpModulate(const float *const *in,
+	                size_t split_length,
+	                size_t offset,
+	                float *out);
 
-  std::vector<float> in_buffer_;
-  std::vector<float> out_buffer_;
-  std::vector<std::unique_ptr<SparseFIRFilter>> analysis_filters_;
-  std::vector<std::unique_ptr<SparseFIRFilter>> synthesis_filters_;
-  std::vector<std::vector<float>> dct_modulation_;
+	std::vector<float> in_buffer_;
+	std::vector<float> out_buffer_;
+	std::vector<std::unique_ptr<SparseFIRFilter>>
+	        analysis_filters_;
+	std::vector<std::unique_ptr<SparseFIRFilter>>
+	        synthesis_filters_;
+	std::vector<std::vector<float>> dct_modulation_;
 };
 
 }  // namespace webrtc
