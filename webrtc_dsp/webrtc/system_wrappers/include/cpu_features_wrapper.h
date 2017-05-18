@@ -19,16 +19,16 @@ extern "C" {
 
 // List of features in x86.
 typedef enum {
-  kSSE2,
-  kSSE3
+	kSSE2,
+	kSSE3
 } CPUFeature;
 
 // List of features in ARM.
 enum {
-  kCPUFeatureARMv7       = (1 << 0),
-  kCPUFeatureVFPv3       = (1 << 1),
-  kCPUFeatureNEON        = (1 << 2),
-  kCPUFeatureLDREXSTREX  = (1 << 3)
+	kCPUFeatureARMv7       = (1 << 0),
+	kCPUFeatureVFPv3       = (1 << 1),
+	kCPUFeatureNEON        = (1 << 2),
+	kCPUFeatureLDREXSTREX  = (1 << 3)
 };
 
 typedef int (*WebRtc_CPUInfo)(CPUFeature feature);

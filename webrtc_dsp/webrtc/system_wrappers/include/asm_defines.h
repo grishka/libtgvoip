@@ -12,7 +12,7 @@
 #define WEBRTC_SYSTEM_WRAPPERS_INCLUDE_ASM_DEFINES_H_
 
 #if defined(__linux__) && defined(__ELF__)
-.section .note.GNU-stack,"",%progbits
+.section .note.GNU - stack, "", % progbits
 #endif
 
 // Define the macros used in ARM assembly code, so that for Mac or iOS builds
@@ -39,7 +39,7 @@ bl _\name
 .endm
 .macro DEFINE_FUNCTION name
 #if defined(__linux__) && defined(__ELF__)
-.type \name,%function
+.type \name, % function
 #endif
 \name:
 .endm

@@ -23,18 +23,19 @@ extern "C" {
 enum Wrap { SAME_WRAP, DIFF_WRAP };
 
 typedef struct RingBuffer {
-  size_t read_pos;
-  size_t write_pos;
-  size_t element_count;
-  size_t element_size;
-  enum Wrap rw_wrap;
-  char* data;
+	size_t read_pos;
+	size_t write_pos;
+	size_t element_count;
+	size_t element_size;
+	enum Wrap rw_wrap;
+	char *data;
 } RingBuffer;
 
 // Creates and initializes the buffer. Returns NULL on failure.
-RingBuffer* WebRtc_CreateBuffer(size_t element_count, size_t element_size);
-void WebRtc_InitBuffer(RingBuffer* handle);
-void WebRtc_FreeBuffer(void* handle);
+RingBuffer *WebRtc_CreateBuffer(size_t
+                                element_count, size_t element_size);
+void WebRtc_InitBuffer(RingBuffer *handle);
+void WebRtc_FreeBuffer(void *handle);
 
 // Reads data from the buffer. The |data_ptr| will point to the address where
 // it is located. If all |element_count| data are feasible to read without
@@ -46,13 +47,14 @@ void WebRtc_FreeBuffer(void* handle);
 // To force a copying to |data|, pass a NULL |data_ptr|.
 //
 // Returns number of elements read.
-size_t WebRtc_ReadBuffer(RingBuffer* handle,
-                         void** data_ptr,
-                         void* data,
+size_t WebRtc_ReadBuffer(RingBuffer *handle,
+                         void **data_ptr,
+                         void *data,
                          size_t element_count);
 
 // Writes |data| to buffer and returns the number of elements written.
-size_t WebRtc_WriteBuffer(RingBuffer* handle, const void* data,
+size_t WebRtc_WriteBuffer(RingBuffer *handle,
+                          const void *data,
                           size_t element_count);
 
 // Moves the buffer read position and returns the number of elements moved.
@@ -60,13 +62,16 @@ size_t WebRtc_WriteBuffer(RingBuffer* handle, const void* data,
 // that is, flushing the buffer. Negative |element_count| moves the read
 // position away from the the write position, that is, stuffing the buffer.
 // Returns number of elements moved.
-int WebRtc_MoveReadPtr(RingBuffer* handle, int element_count);
+int WebRtc_MoveReadPtr(RingBuffer *handle,
+                       int element_count);
 
 // Returns number of available elements to read.
-size_t WebRtc_available_read(const RingBuffer* handle);
+size_t WebRtc_available_read(const RingBuffer *
+                             handle);
 
 // Returns number of available elements for write.
-size_t WebRtc_available_write(const RingBuffer* handle);
+size_t WebRtc_available_write(const RingBuffer *
+                              handle);
 
 #ifdef __cplusplus
 }

@@ -24,18 +24,18 @@
 #define AGC_BAD_PARAMETER_WARNING 18050
 
 enum {
-  kAgcModeUnchanged,
-  kAgcModeAdaptiveAnalog,
-  kAgcModeAdaptiveDigital,
-  kAgcModeFixedDigital
+	kAgcModeUnchanged,
+	kAgcModeAdaptiveAnalog,
+	kAgcModeAdaptiveDigital,
+	kAgcModeFixedDigital
 };
 
 enum { kAgcFalse = 0, kAgcTrue };
 
 typedef struct {
-  int16_t targetLevelDbfs;    // default 3 (-3 dBOv)
-  int16_t compressionGaindB;  // default 9 dB
-  uint8_t limiterEnable;      // default kAgcTrue (on)
+	int16_t targetLevelDbfs;    // default 3 (-3 dBOv)
+	int16_t compressionGaindB;  // default 9 dB
+	uint8_t limiterEnable;      // default kAgcTrue (on)
 } WebRtcAgcConfig;
 
 #if defined(__cplusplus)
@@ -54,7 +54,8 @@ extern "C" {
  *                          :  0 - Normal operation.
  *                          : -1 - Error.
  */
-int WebRtcAgc_GetAddFarendError(void* state, size_t samples);
+int WebRtcAgc_GetAddFarendError(void *state,
+                                size_t samples);
 
 /*
  * This function processes a 10 ms frame of far-end speech to determine
@@ -71,7 +72,8 @@ int WebRtcAgc_GetAddFarendError(void* state, size_t samples);
  *                          :  0 - Normal operation.
  *                          : -1 - Error
  */
-int WebRtcAgc_AddFarend(void* agcInst, const int16_t* inFar, size_t samples);
+int WebRtcAgc_AddFarend(void *agcInst,
+                        const int16_t *inFar, size_t samples);
 
 /*
  * This function processes a 10 ms frame of microphone speech to determine
@@ -93,8 +95,8 @@ int WebRtcAgc_AddFarend(void* agcInst, const int16_t* inFar, size_t samples);
  *                          :  0 - Normal operation.
  *                          : -1 - Error
  */
-int WebRtcAgc_AddMic(void* agcInst,
-                     int16_t* const* inMic,
+int WebRtcAgc_AddMic(void *agcInst,
+                     int16_t *const *inMic,
                      size_t num_bands,
                      size_t samples);
 
@@ -121,12 +123,12 @@ int WebRtcAgc_AddMic(void* agcInst,
  *                          :  0 - Normal operation.
  *                          : -1 - Error
  */
-int WebRtcAgc_VirtualMic(void* agcInst,
-                         int16_t* const* inMic,
+int WebRtcAgc_VirtualMic(void *agcInst,
+                         int16_t *const *inMic,
                          size_t num_bands,
                          size_t samples,
                          int32_t micLevelIn,
-                         int32_t* micLevelOut);
+                         int32_t *micLevelOut);
 
 /*
  * This function processes a 10 ms frame and adjusts (normalizes) the gain both
@@ -162,15 +164,15 @@ int WebRtcAgc_VirtualMic(void* agcInst,
  *                          :  0 - Normal operation.
  *                          : -1 - Error
  */
-int WebRtcAgc_Process(void* agcInst,
-                      const int16_t* const* inNear,
+int WebRtcAgc_Process(void *agcInst,
+                      const int16_t *const *inNear,
                       size_t num_bands,
                       size_t samples,
-                      int16_t* const* out,
+                      int16_t *const *out,
                       int32_t inMicLevel,
-                      int32_t* outMicLevel,
+                      int32_t *outMicLevel,
                       int16_t echo,
-                      uint8_t* saturationWarning);
+                      uint8_t *saturationWarning);
 
 /*
  * This function sets the config parameters (targetLevelDbfs,
@@ -186,7 +188,8 @@ int WebRtcAgc_Process(void* agcInst,
  *                          :  0 - Normal operation.
  *                          : -1 - Error
  */
-int WebRtcAgc_set_config(void* agcInst, WebRtcAgcConfig config);
+int WebRtcAgc_set_config(void *agcInst,
+                         WebRtcAgcConfig config);
 
 /*
  * This function returns the config parameters (targetLevelDbfs,
@@ -202,13 +205,14 @@ int WebRtcAgc_set_config(void* agcInst, WebRtcAgcConfig config);
  *                          :  0 - Normal operation.
  *                          : -1 - Error
  */
-int WebRtcAgc_get_config(void* agcInst, WebRtcAgcConfig* config);
+int WebRtcAgc_get_config(void *agcInst,
+                         WebRtcAgcConfig *config);
 
 /*
  * This function creates and returns an AGC instance, which will contain the
  * state information for one (duplex) channel.
  */
-void* WebRtcAgc_Create();
+void *WebRtcAgc_Create();
 
 /*
  * This function frees the AGC instance created at the beginning.
@@ -216,7 +220,7 @@ void* WebRtcAgc_Create();
  * Input:
  *      - agcInst           : AGC instance.
  */
-void WebRtcAgc_Free(void* agcInst);
+void WebRtcAgc_Free(void *agcInst);
 
 /*
  * This function initializes an AGC instance.
@@ -234,7 +238,7 @@ void WebRtcAgc_Free(void* agcInst);
  * Return value             :  0 - Ok
  *                            -1 - Error
  */
-int WebRtcAgc_Init(void* agcInst,
+int WebRtcAgc_Init(void *agcInst,
                    int32_t minLevel,
                    int32_t maxLevel,
                    int16_t agcMode,

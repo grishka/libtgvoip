@@ -11,40 +11,44 @@
 #include "BufferPool.h"
 #include "BlockingQueue.h"
 
-namespace tgvoip{
-class EchoCanceller{
+namespace tgvoip
+{
+class EchoCanceller {
 
 public:
-	EchoCanceller(bool enableAEC, bool enableNS, bool enableAGC);
+	EchoCanceller(bool enableAEC, bool enableNS,
+	              bool enableAGC);
 	virtual ~EchoCanceller();
 	virtual void Start();
 	virtual void Stop();
-	void SpeakerOutCallback(unsigned char* data, size_t len);
+	void SpeakerOutCallback(unsigned char *data,
+	                        size_t len);
 	void Enable(bool enabled);
-	void ProcessInput(unsigned char* data, unsigned char* out, size_t len);
+	void ProcessInput(unsigned char *data,
+	                  unsigned char *out, size_t len);
 
 private:
 	bool enableAEC;
 	bool enableAGC;
 	bool enableNS;
 #ifndef TGVOIP_NO_DSP
-	static void* StartBufferFarendThread(void* arg);
+	static void *StartBufferFarendThread(void *arg);
 	void RunBufferFarendThread();
 	bool didBufferFarend;
 	tgvoip_mutex_t aecMutex;
-	void* aec;
-	void* splittingFilter; // webrtc::SplittingFilter
-	void* splittingFilterIn; // webrtc::IFChannelBuffer
-	void* splittingFilterOut; // webrtc::IFChannelBuffer
-	void* splittingFilterFarend; // webrtc::SplittingFilter
-	void* splittingFilterFarendIn; // webrtc::IFChannelBuffer
-	void* splittingFilterFarendOut; // webrtc::IFChannelBuffer
+	void *aec;
+	void *splittingFilter; // webrtc::SplittingFilter
+	void *splittingFilterIn; // webrtc::IFChannelBuffer
+	void *splittingFilterOut; // webrtc::IFChannelBuffer
+	void *splittingFilterFarend; // webrtc::SplittingFilter
+	void *splittingFilterFarendIn; // webrtc::IFChannelBuffer
+	void *splittingFilterFarendOut; // webrtc::IFChannelBuffer
 	tgvoip_thread_t bufferFarendThread;
-	BlockingQueue* farendQueue;
-	BufferPool* farendBufferPool;
+	BlockingQueue *farendQueue;
+	BufferPool *farendBufferPool;
 	bool running;
-	void* ns; // NsxHandle
-	void* agc;
+	void *ns; // NsxHandle
+	void *agc;
 	int32_t agcMicLevel;
 #endif
 };

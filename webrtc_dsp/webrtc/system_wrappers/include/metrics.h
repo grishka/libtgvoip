@@ -206,8 +206,10 @@
   } while (0)
 
 
-namespace webrtc {
-namespace metrics {
+namespace webrtc
+{
+namespace metrics
+{
 
 // Time that should have elapsed for stats that are gathered once per call.
 enum { kMinRunTimeInSeconds = 10 };
@@ -218,25 +220,29 @@ class Histogram;
 // histogram).
 
 // Get histogram for counters.
-Histogram* HistogramFactoryGetCounts(
-    const std::string& name, int min, int max, int bucket_count);
+Histogram *HistogramFactoryGetCounts(
+    const std::string &name, int min, int max,
+    int bucket_count);
 
 // Get histogram for counters with linear bucket spacing.
-Histogram* HistogramFactoryGetCountsLinear(const std::string& name,
-                                           int min,
-                                           int max,
-                                           int bucket_count);
+Histogram *HistogramFactoryGetCountsLinear(
+    const std::string &name,
+    int min,
+    int max,
+    int bucket_count);
 
 // Get histogram for enumerators.
 // |boundary| should be above the max enumerator sample.
-Histogram* HistogramFactoryGetEnumeration(
-    const std::string& name, int boundary);
+Histogram *HistogramFactoryGetEnumeration(
+    const std::string &name, int boundary);
 
 // Returns name of the histogram.
-const std::string& GetHistogramName(Histogram* histogram_pointer);
+const std::string &GetHistogramName(
+    Histogram *histogram_pointer);
 
 // Function for adding a |sample| to a histogram.
-void HistogramAdd(Histogram* histogram_pointer, int sample);
+void HistogramAdd(Histogram *histogram_pointer,
+                  int sample);
 
 }  // namespace metrics
 }  // namespace webrtc

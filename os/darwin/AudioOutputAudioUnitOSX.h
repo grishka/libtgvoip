@@ -12,23 +12,38 @@
 #import <CoreAudio/CoreAudio.h>
 #include "../../audio/AudioOutput.h"
 
-namespace tgvoip{ namespace audio{
-class AudioOutputAudioUnit : public AudioOutput{
+namespace tgvoip
+{
+namespace audio
+{
+class AudioOutputAudioUnit : public AudioOutput {
 
 public:
 	AudioOutputAudioUnit(std::string deviceID);
 	virtual ~AudioOutputAudioUnit();
-	virtual void Configure(uint32_t sampleRate, uint32_t bitsPerSample, uint32_t channels);
+	virtual void Configure(uint32_t sampleRate,
+	                       uint32_t bitsPerSample, uint32_t channels);
 	virtual void Start();
 	virtual void Stop();
 	virtual bool IsPlaying();
-	void HandleBufferCallback(AudioBufferList* ioData);
-	static void EnumerateDevices(std::vector<AudioOutputDevice>& devs);
-	virtual void SetCurrentDevice(std::string deviceID);
-	
+	void HandleBufferCallback(AudioBufferList *
+	                          ioData);
+	static void EnumerateDevices(
+	    std::vector<AudioOutputDevice> &devs);
+	virtual void SetCurrentDevice(std::string
+	                              deviceID);
+
 private:
-	static OSStatus BufferCallback(void *inRefCon, AudioUnitRenderActionFlags *ioActionFlags, const AudioTimeStamp *inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList *ioData);
-	static OSStatus DefaultDeviceChangedCallback(AudioObjectID inObjectID, UInt32 inNumberAddresses, const AudioObjectPropertyAddress *inAddresses, void *inClientData);
+	static OSStatus BufferCallback(void *inRefCon,
+	                               AudioUnitRenderActionFlags *ioActionFlags,
+	                               const AudioTimeStamp *inTimeStamp,
+	                               UInt32 inBusNumber, UInt32 inNumberFrames,
+	                               AudioBufferList *ioData);
+	static OSStatus DefaultDeviceChangedCallback(
+	    AudioObjectID inObjectID,
+	    UInt32 inNumberAddresses,
+	    const AudioObjectPropertyAddress *inAddresses,
+	    void *inClientData);
 	void SetPanRight(bool panRight);
 	unsigned char remainingData[10240];
 	size_t remainingDataSize;
@@ -38,6 +53,7 @@ private:
 	bool isMacBookPro;
 	AudioDeviceID sysDevID;
 };
-}}
+}
+}
 
 #endif //LIBTGVOIP_AUDIOINPUTAUDIOUNIT_H

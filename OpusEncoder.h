@@ -17,34 +17,36 @@
 
 #include <stdint.h>
 
-namespace tgvoip{
-class OpusEncoder : public MediaStreamItf{
+namespace tgvoip
+{
+class OpusEncoder : public MediaStreamItf {
 public:
-	OpusEncoder(MediaStreamItf* source);
+	OpusEncoder(MediaStreamItf *source);
 	virtual ~OpusEncoder();
 	virtual void Start();
 	virtual void Stop();
 	void SetBitrate(uint32_t bitrate);
-	void SetEchoCanceller(EchoCanceller* aec);
+	void SetEchoCanceller(EchoCanceller *aec);
 	void SetOutputFrameDuration(uint32_t duration);
 	void SetPacketLoss(int percent);
 	int GetPacketLoss();
 	uint32_t GetBitrate();
 
 private:
-	static size_t Callback(unsigned char* data, size_t len, void* param);
-	static void* StartThread(void* arg);
+	static size_t Callback(unsigned char *data,
+	                       size_t len, void *param);
+	static void *StartThread(void *arg);
 	void RunThread();
-	void Encode(unsigned char* data, size_t len);
-	MediaStreamItf* source;
-	::OpusEncoder* enc;
+	void Encode(unsigned char *data, size_t len);
+	MediaStreamItf *source;
+	::OpusEncoder *enc;
 	unsigned char buffer[4096];
 	uint32_t requestedBitrate;
 	uint32_t currentBitrate;
 	tgvoip_thread_t thread;
 	BlockingQueue queue;
 	BufferPool bufferPool;
-	EchoCanceller* echoCanceller;
+	EchoCanceller *echoCanceller;
 	int complexity;
 	bool running;
 	uint32_t frameDuration;

@@ -12,12 +12,16 @@
 
 #include "../../audio/AudioOutput.h"
 
-namespace tgvoip{ namespace audio{
-class AudioOutputOpenSLES : public AudioOutput{
+namespace tgvoip
+{
+namespace audio
+{
+class AudioOutputOpenSLES : public AudioOutput {
 public:
 	AudioOutputOpenSLES();
 	virtual ~AudioOutputOpenSLES();
-	virtual void Configure(uint32_t sampleRate, uint32_t bitsPerSample, uint32_t channels);
+	virtual void Configure(uint32_t sampleRate,
+	                       uint32_t bitsPerSample, uint32_t channels);
 	virtual bool IsPhone();
 	virtual void EnableLoudspeaker(bool enabled);
 	virtual void Start();
@@ -29,19 +33,21 @@ public:
 	static int nativeBufferSize;
 
 private:
-	static void BufferCallback(SLAndroidSimpleBufferQueueItf bq, void *context);
+	static void BufferCallback(
+	    SLAndroidSimpleBufferQueueItf bq, void *context);
 	void HandleSLCallback();
 	SLEngineItf slEngine;
 	SLObjectItf slPlayerObj;
 	SLObjectItf slOutputMixObj;
 	SLPlayItf slPlayer;
 	SLAndroidSimpleBufferQueueItf slBufferQueue;
-	int16_t* buffer;
-	int16_t* nativeBuffer;
+	int16_t *buffer;
+	int16_t *nativeBuffer;
 	bool stopped;
 	unsigned char remainingData[10240];
 	size_t remainingDataSize;
 };
-}}
+}
+}
 
 #endif //LIBTGVOIP_AUDIOOUTPUTANDROID_H

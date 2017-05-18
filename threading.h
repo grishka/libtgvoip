@@ -38,69 +38,78 @@ typedef pthread_cond_t tgvoip_lock_t;
 
 #ifdef __APPLE__
 #include <dispatch/dispatch.h>
-namespace tgvoip{
-class Semaphore{
+namespace tgvoip
+{
+class Semaphore {
 public:
-	Semaphore(unsigned int maxCount, unsigned int initValue){
+	Semaphore(unsigned int maxCount,
+	          unsigned int initValue) {
 		sem = dispatch_semaphore_create(initValue);
 	}
-	
-	~Semaphore(){
+
+	~Semaphore() {
 #if ! __has_feature(objc_arc)
-        dispatch_release(sem);
+		dispatch_release(sem);
 #endif
 	}
-	
-	void Acquire(){
-		dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+
+	void Acquire() {
+		dispatch_semaphore_wait(sem,
+		                        DISPATCH_TIME_FOREVER);
 	}
-	
-	void Release(){
+
+	void Release() {
 		dispatch_semaphore_signal(sem);
 	}
-	
-	void Acquire(int count){
-		for(int i=0;i<count;i++)
+
+	void Acquire(int count) {
+		for(int i = 0; i < count; i++) {
 			Acquire();
+		}
 	}
-	
-	void Release(int count){
-		for(int i=0;i<count;i++)
+
+	void Release(int count) {
+		for(int i = 0; i < count; i++) {
 			Release();
+		}
 	}
-	
+
 private:
 	dispatch_semaphore_t sem;
 };
 }
 #else
-namespace tgvoip{
-class Semaphore{
+namespace tgvoip
+{
+class Semaphore {
 public:
-	Semaphore(unsigned int maxCount, unsigned int initValue){
+	Semaphore(unsigned int maxCount,
+	          unsigned int initValue) {
 		sem_init(&sem, 0, initValue);
 	}
 
-	~Semaphore(){
+	~Semaphore() {
 		sem_destroy(&sem);
 	}
 
-	void Acquire(){
+	void Acquire() {
 		sem_wait(&sem);
 	}
 
-	void Release(){
+	void Release() {
 		sem_post(&sem);
 	}
 
-	void Acquire(int count){
-		for(int i=0;i<count;i++)
+	void Acquire(int count) {
+		for(int i = 0; i < count; i++) {
 			Acquire();
+		}
 	}
 
-	void Release(int count){
-		for(int i=0;i<count;i++)
+	void Release(int count) {
+		for(int i = 0; i < count; i++) {
 			Release();
+		}
 	}
 
 private:
@@ -114,7 +123,8 @@ private:
 #include <Windows.h>
 typedef HANDLE tgvoip_thread_t;
 typedef CRITICAL_SECTION tgvoip_mutex_t;
-typedef HANDLE tgvoip_lock_t; // uncomment for XP compatibility
+typedef HANDLE
+tgvoip_lock_t; // uncomment for XP compatibility
 //typedef CONDITION_VARIABLE tgvoip_lock_t;
 
 #define start_thread(ref, entry, arg) (ref=CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)entry, arg, 0, NULL))
@@ -144,22 +154,26 @@ typedef HANDLE tgvoip_lock_t; // uncomment for XP compatibility
 //#define wait_lock(lock, mutex) SleepConditionVariableCS(&lock, &mutex, INFINITE)
 //#define notify_lock(lock) WakeAllConditionVariable(&lock)
 
-namespace tgvoip{
-class Semaphore{
+namespace tgvoip
+{
+class Semaphore {
 public:
-	Semaphore(unsigned int maxCount, unsigned int initValue){
+	Semaphore(unsigned int maxCount,
+	          unsigned int initValue) {
 #if !defined(WINAPI_FAMILY) || WINAPI_FAMILY!=WINAPI_FAMILY_PHONE_APP
-		h=CreateSemaphore(NULL, initValue, maxCount, NULL);
+		h = CreateSemaphore(NULL, initValue, maxCount,
+		                    NULL);
 #else
-		h=CreateSemaphoreEx(NULL, initValue, maxCount, NULL, 0, 0);
+		h = CreateSemaphoreEx(NULL, initValue, maxCount,
+		                      NULL, 0, 0);
 #endif
 	}
 
-	~Semaphore(){
+	~Semaphore() {
 		CloseHandle(h);
 	}
 
-	void Acquire(){
+	void Acquire() {
 #if !defined(WINAPI_FAMILY) || WINAPI_FAMILY!=WINAPI_FAMILY_PHONE_APP
 		WaitForSingleObject(h, INFINITE);
 #else
@@ -167,16 +181,17 @@ public:
 #endif
 	}
 
-	void Release(){
+	void Release() {
 		ReleaseSemaphore(h, 1, NULL);
 	}
 
-	void Acquire(int count){
-		for(int i=0;i<count;i++)
+	void Acquire(int count) {
+		for(int i = 0; i < count; i++) {
 			Acquire();
+		}
 	}
 
-	void Release(int count){
+	void Release(int count) {
 		ReleaseSemaphore(h, count, NULL);
 	}
 
@@ -188,18 +203,19 @@ private:
 #error "No threading implementation for your operating system"
 #endif
 
-namespace tgvoip{
-class MutexGuard{
+namespace tgvoip
+{
+class MutexGuard {
 public:
-    MutexGuard(tgvoip_mutex_t &mutex) : mutex(mutex) {
+	MutexGuard(tgvoip_mutex_t &mutex) : mutex(mutex) {
 		lock_mutex(mutex);
 	}
-	~MutexGuard(){
+	~MutexGuard() {
 		unlock_mutex(mutex);
 	}
 private:
 	tgvoip_mutex_t &mutex;
 };
 }
-	
+
 #endif //__THREADING_H

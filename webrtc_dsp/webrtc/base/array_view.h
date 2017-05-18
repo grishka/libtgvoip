@@ -14,7 +14,8 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/type_traits.h"
 
-namespace rtc {
+namespace rtc
+{
 
 // Many functions read from or write to arrays. The obvious way to do this is
 // to use two arguments, a pointer to the first element and an element count:
@@ -72,84 +73,113 @@ namespace rtc {
 // so it's probably cheaper to pass it by value than by const reference.
 template <typename T>
 class ArrayView final {
- public:
-  using value_type = T;
-  using const_iterator = const T*;
+public:
+	using value_type = T;
+	using const_iterator = const T*;
 
-  // Construct an empty ArrayView.
-  ArrayView() : ArrayView(static_cast<T*>(nullptr), 0) {}
-  ArrayView(std::nullptr_t) : ArrayView() {}
+	// Construct an empty ArrayView.
+	ArrayView() : ArrayView(static_cast<T *>(nullptr),
+		                        0) {}
+	ArrayView(std::nullptr_t) : ArrayView() {}
 
-  // Construct an ArrayView for a (pointer,size) pair.
-  template <typename U>
-  ArrayView(U* data, size_t size)
-      : data_(size == 0 ? nullptr : data), size_(size) {
-    CheckInvariant();
-  }
+	// Construct an ArrayView for a (pointer,size) pair.
+	template <typename U>
+	ArrayView(U *data, size_t size)
+		: data_(size == 0 ? nullptr : data), size_(size) {
+		CheckInvariant();
+	}
 
-  // Construct an ArrayView for an array.
-  template <typename U, size_t N>
-  ArrayView(U (&array)[N]) : ArrayView(&array[0], N) {}
+	// Construct an ArrayView for an array.
+	template <typename U, size_t N>
+	ArrayView(U (&array)[N]) : ArrayView(&array[0],
+		                                     N) {}
 
-  // Construct an ArrayView for any type U that has a size() method whose
-  // return value converts implicitly to size_t, and a data() method whose
-  // return value converts implicitly to T*. In particular, this means we allow
-  // conversion from ArrayView<T> to ArrayView<const T>, but not the other way
-  // around. Other allowed conversions include std::vector<T> to ArrayView<T>
-  // or ArrayView<const T>, const std::vector<T> to ArrayView<const T>, and
-  // rtc::Buffer to ArrayView<uint8_t> (with the same const behavior as
-  // std::vector).
-  template <
-      typename U,
+	// Construct an ArrayView for any type U that has a size() method whose
+	// return value converts implicitly to size_t, and a data() method whose
+	// return value converts implicitly to T*. In particular, this means we allow
+	// conversion from ArrayView<T> to ArrayView<const T>, but not the other way
+	// around. Other allowed conversions include std::vector<T> to ArrayView<T>
+	// or ArrayView<const T>, const std::vector<T> to ArrayView<const T>, and
+	// rtc::Buffer to ArrayView<uint8_t> (with the same const behavior as
+	// std::vector).
+	template <
+	    typename U,
 #if defined(_MSC_VER) && _MCS_VER<=1800
-      typename std::enable_if<true>::type* = nullptr>
+	    typename std::enable_if<true>::type * = nullptr >
 #else
-      typename std::enable_if<HasDataAndSize<U, T>::value>::type* = nullptr>
+	    typename std::enable_if<HasDataAndSize<U, T>::value>::type *
+	    = nullptr >
 #endif
-  ArrayView(U& u) : ArrayView(u.data(), u.size()) {}
+	ArrayView(U &u) : ArrayView(u.data(), u.size()) {}
 
-  // Indexing, size, and iteration. These allow mutation even if the ArrayView
-  // is const, because the ArrayView doesn't own the array. (To prevent
-  // mutation, use ArrayView<const T>.)
-  size_t size() const { return size_; }
-  bool empty() const { return size_ == 0; }
-  T* data() const { return data_; }
-  T& operator[](size_t idx) const {
-    RTC_DCHECK_LT(idx, size_);
-    RTC_DCHECK(data_);  // Follows from size_ > idx and the class invariant.
-    return data_[idx];
-  }
-  T* begin() const { return data_; }
-  T* end() const { return data_ + size_; }
-  const T* cbegin() const { return data_; }
-  const T* cend() const { return data_ + size_; }
+	// Indexing, size, and iteration. These allow mutation even if the ArrayView
+	// is const, because the ArrayView doesn't own the array. (To prevent
+	// mutation, use ArrayView<const T>.)
+	size_t size() const {
+		return size_;
+	}
+	bool empty() const {
+		return size_ == 0;
+	}
+	T *data() const {
+		return data_;
+	}
+	T &operator[](size_t idx) const {
+		RTC_DCHECK_LT(idx, size_);
+		RTC_DCHECK(
+		    data_);  // Follows from size_ > idx and the class invariant.
+		return data_[idx];
+	}
+	T *begin() const {
+		return data_;
+	}
+	T *end() const {
+		return data_ + size_;
+	}
+	const T *cbegin() const {
+		return data_;
+	}
+	const T *cend() const {
+		return data_ + size_;
+	}
 
-  ArrayView subview(size_t offset, size_t size) const {
-    if (offset >= size_)
-      return ArrayView();
-    return ArrayView(data_ + offset, std::min(size, size_ - offset));
-  }
-  ArrayView subview(size_t offset) const { return subview(offset, size_); }
+	ArrayView subview(size_t offset,
+	                  size_t size) const {
+		if (offset >= size_) {
+			return ArrayView();
+		}
+		return ArrayView(data_ + offset, std::min(size,
+		                 size_ - offset));
+	}
+	ArrayView subview(size_t offset) const {
+		return subview(offset, size_);
+	}
 
-  // Comparing two ArrayViews compares their (pointer,size) pairs; it does
-  // *not* dereference the pointers.
-  friend bool operator==(const ArrayView& a, const ArrayView& b) {
-    return a.data_ == b.data_ && a.size_ == b.size_;
-  }
-  friend bool operator!=(const ArrayView& a, const ArrayView& b) {
-    return !(a == b);
-  }
+	// Comparing two ArrayViews compares their (pointer,size) pairs; it does
+	// *not* dereference the pointers.
+	friend bool operator==(const ArrayView &a,
+	                       const ArrayView &b) {
+		return a.data_ == b.data_ && a.size_ == b.size_;
+	}
+	friend bool operator!=(const ArrayView &a,
+	                       const ArrayView &b) {
+		return !(a == b);
+	}
 
- private:
-  // Invariant: !data_ iff size_ == 0.
-  void CheckInvariant() const { RTC_DCHECK_EQ(!data_, size_ == 0); }
-  T* data_;
-  size_t size_;
+private:
+	// Invariant: !data_ iff size_ == 0.
+	void CheckInvariant() const {
+		RTC_DCHECK_EQ(!data_, size_ == 0);
+	}
+	T *data_;
+	size_t size_;
 };
 
 template <typename T>
-inline ArrayView<T> MakeArrayView(T* data, size_t size) {
-  return ArrayView<T>(data, size);
+inline ArrayView<T> MakeArrayView(T *data,
+                                  size_t size)
+{
+	return ArrayView<T>(data, size);
 }
 
 }  // namespace rtc

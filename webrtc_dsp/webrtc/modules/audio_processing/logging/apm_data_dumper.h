@@ -27,123 +27,138 @@
 #error "Set WEBRTC_APM_DEBUG_DUMP to either 0 or 1"
 #endif
 
-namespace webrtc {
+namespace webrtc
+{
 
 #if WEBRTC_APM_DEBUG_DUMP == 1
 // Functor used to use as a custom deleter in the map of file pointers to raw
 // files.
 struct RawFileCloseFunctor {
-  void operator()(FILE* f) const { fclose(f); }
+	void operator()(FILE *f) const {
+		fclose(f);
+	}
 };
 #endif
 
 // Class that handles dumping of variables into files.
 class ApmDataDumper {
- public:
-  // Constructor that takes an instance index that may
-  // be used to distinguish data dumped from different
-  // instances of the code.
-  explicit ApmDataDumper(int instance_index);
+public:
+	// Constructor that takes an instance index that may
+	// be used to distinguish data dumped from different
+	// instances of the code.
+	explicit ApmDataDumper(int instance_index);
 
-  ~ApmDataDumper();
+	~ApmDataDumper();
 
-  // Reinitializes the data dumping such that new versions
-  // of all files being dumped to are created.
-  void InitiateNewSetOfRecordings() {
+	// Reinitializes the data dumping such that new versions
+	// of all files being dumped to are created.
+	void InitiateNewSetOfRecordings() {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    ++recording_set_index_;
+		++recording_set_index_;
 #endif
-  }
+	}
 
-  // Methods for performing dumping of data of various types into
-  // various formats.
-  void DumpRaw(const char* name, int v_length, const float* v) {
+	// Methods for performing dumping of data of various types into
+	// various formats.
+	void DumpRaw(const char *name, int v_length,
+	             const float *v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    FILE* file = GetRawFile(name);
-    fwrite(v, sizeof(v[0]), v_length, file);
+		FILE *file = GetRawFile(name);
+		fwrite(v, sizeof(v[0]), v_length, file);
 #endif
-  }
+	}
 
-  void DumpRaw(const char* name, rtc::ArrayView<const float> v) {
+	void DumpRaw(const char *name,
+	             rtc::ArrayView<const float> v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    DumpRaw(name, v.size(), v.data());
+		DumpRaw(name, v.size(), v.data());
 #endif
-  }
+	}
 
-  void DumpRaw(const char* name, int v_length, const bool* v) {
+	void DumpRaw(const char *name, int v_length,
+	             const bool *v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    FILE* file = GetRawFile(name);
-    for (int k = 0; k < v_length; ++k) {
-      int16_t value = static_cast<int16_t>(v[k]);
-      fwrite(&value, sizeof(value), 1, file);
-    }
+		FILE *file = GetRawFile(name);
+		for (int k = 0; k < v_length; ++k) {
+			int16_t value = static_cast<int16_t>(v[k]);
+			fwrite(&value, sizeof(value), 1, file);
+		}
 #endif
-  }
+	}
 
-  void DumpRaw(const char* name, rtc::ArrayView<const bool> v) {
+	void DumpRaw(const char *name,
+	             rtc::ArrayView<const bool> v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    DumpRaw(name, v.size(), v.data());
+		DumpRaw(name, v.size(), v.data());
 #endif
-  }
+	}
 
-  void DumpRaw(const char* name, int v_length, const int16_t* v) {
+	void DumpRaw(const char *name, int v_length,
+	             const int16_t *v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    FILE* file = GetRawFile(name);
-    fwrite(v, sizeof(v[0]), v_length, file);
+		FILE *file = GetRawFile(name);
+		fwrite(v, sizeof(v[0]), v_length, file);
 #endif
-  }
+	}
 
-  void DumpRaw(const char* name, rtc::ArrayView<const int16_t> v) {
+	void DumpRaw(const char *name,
+	             rtc::ArrayView<const int16_t> v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    DumpRaw(name, v.size(), v.data());
+		DumpRaw(name, v.size(), v.data());
 #endif
-  }
+	}
 
-  void DumpRaw(const char* name, int v_length, const int32_t* v) {
+	void DumpRaw(const char *name, int v_length,
+	             const int32_t *v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    FILE* file = GetRawFile(name);
-    fwrite(v, sizeof(v[0]), v_length, file);
+		FILE *file = GetRawFile(name);
+		fwrite(v, sizeof(v[0]), v_length, file);
 #endif
-  }
+	}
 
-  void DumpRaw(const char* name, rtc::ArrayView<const int32_t> v) {
+	void DumpRaw(const char *name,
+	             rtc::ArrayView<const int32_t> v) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    DumpRaw(name, v.size(), v.data());
+		DumpRaw(name, v.size(), v.data());
 #endif
-  }
+	}
 
-  void DumpWav(const char* name,
-               int v_length,
-               const float* v,
-               int sample_rate_hz,
-               int num_channels) {
+	void DumpWav(const char *name,
+	             int v_length,
+	             const float *v,
+	             int sample_rate_hz,
+	             int num_channels) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    WavWriter* file = GetWavFile(name, sample_rate_hz, num_channels);
-    file->WriteSamples(v, v_length);
+		WavWriter *file = GetWavFile(name, sample_rate_hz,
+		                             num_channels);
+		file->WriteSamples(v, v_length);
 #endif
-  }
+	}
 
-  void DumpWav(const char* name,
-               rtc::ArrayView<const float> v,
-               int sample_rate_hz,
-               int num_channels) {
+	void DumpWav(const char *name,
+	             rtc::ArrayView<const float> v,
+	             int sample_rate_hz,
+	             int num_channels) {
 #if WEBRTC_APM_DEBUG_DUMP == 1
-    DumpWav(name, v.size(), v.data(), sample_rate_hz, num_channels);
+		DumpWav(name, v.size(), v.data(), sample_rate_hz,
+		        num_channels);
 #endif
-  }
+	}
 
- private:
+private:
 #if WEBRTC_APM_DEBUG_DUMP == 1
-  const int instance_index_;
-  int recording_set_index_ = 0;
-  std::unordered_map<std::string, std::unique_ptr<FILE, RawFileCloseFunctor>>
-      raw_files_;
-  std::unordered_map<std::string, std::unique_ptr<WavWriter>> wav_files_;
+	const int instance_index_;
+	int recording_set_index_ = 0;
+	std::unordered_map<std::string, std::unique_ptr<FILE, RawFileCloseFunctor>>
+	        raw_files_;
+	std::unordered_map<std::string, std::unique_ptr<WavWriter>>
+	        wav_files_;
 
-  FILE* GetRawFile(const char* name);
-  WavWriter* GetWavFile(const char* name, int sample_rate_hz, int num_channels);
+	FILE *GetRawFile(const char *name);
+	WavWriter *GetWavFile(const char *name,
+	                      int sample_rate_hz, int num_channels);
 #endif
-  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(ApmDataDumper);
+	RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(ApmDataDumper);
 };
 
 }  // namespace webrtc

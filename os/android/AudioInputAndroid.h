@@ -11,16 +11,20 @@
 #include "../../audio/AudioInput.h"
 #include "../../threading.h"
 
-namespace tgvoip{ namespace audio{
-class AudioInputAndroid : public AudioInput{
+namespace tgvoip
+{
+namespace audio
+{
+class AudioInputAndroid : public AudioInput {
 
 public:
 	AudioInputAndroid();
 	virtual ~AudioInputAndroid();
-	virtual void Configure(uint32_t sampleRate, uint32_t bitsPerSample, uint32_t channels);
+	virtual void Configure(uint32_t sampleRate,
+	                       uint32_t bitsPerSample, uint32_t channels);
 	virtual void Start();
 	virtual void Stop();
-	void HandleCallback(JNIEnv* env, jobject buffer);
+	void HandleCallback(JNIEnv *env, jobject buffer);
 	static jmethodID initMethod;
 	static jmethodID releaseMethod;
 	static jmethodID startMethod;
@@ -33,6 +37,7 @@ private:
 	tgvoip_mutex_t mutex;
 
 };
-}}
+}
+}
 
 #endif //LIBTGVOIP_AUDIOINPUTANDROID_H

@@ -34,12 +34,15 @@ using namespace tgvoip::audio;
 #if defined(__ANDROID__)
 int AudioOutput::systemVersion;
 #endif
-int32_t AudioOutput::estimatedDelay=60;
+int32_t AudioOutput::estimatedDelay = 60;
 
-AudioOutput *AudioOutput::Create(std::string deviceID){
+AudioOutput *AudioOutput::Create(std::string
+                                 deviceID)
+{
 #if defined(__ANDROID__)
-	if(systemVersion<21)
+	if(systemVersion < 21) {
 		return new AudioOutputAndroid();
+	}
 	return new AudioOutputOpenSLES();
 #elif defined(__APPLE__)
 #if TARGET_OS_OSX
@@ -49,76 +52,93 @@ AudioOutput *AudioOutput::Create(std::string deviceID){
 #endif
 #elif defined(_WIN32)
 #ifdef TGVOIP_WINXP_COMPAT
-	if(LOBYTE(LOWORD(GetVersion()))<6)
+	if(LOBYTE(LOWORD(GetVersion())) < 6) {
 		return new AudioOutputWave(deviceID);
+	}
 #endif
 	return new AudioOutputWASAPI(deviceID);
 #elif defined(__linux__)
-	if(AudioOutputPulse::IsAvailable()){
-		AudioOutputPulse* aop=new AudioOutputPulse(deviceID);
-		if(!aop->IsInitialized())
+	if(AudioOutputPulse::IsAvailable()) {
+		AudioOutputPulse *aop = new AudioOutputPulse(
+		    deviceID);
+		if(!aop->IsInitialized()) {
 			delete aop;
-		else
+		} else {
 			return aop;
+		}
 		LOGW("out: PulseAudio available but not working; trying ALSA");
 	}
 	return new AudioOutputALSA(deviceID);
 #endif
 }
 
-AudioOutput::AudioOutput() : currentDevice("default"){
-	failed=false;
+AudioOutput::AudioOutput() :
+	currentDevice("default")
+{
+	failed = false;
 }
 
-AudioOutput::AudioOutput(std::string deviceID) : currentDevice(deviceID){
-	failed=false;
+AudioOutput::AudioOutput(std::string deviceID) :
+	currentDevice(deviceID)
+{
+	failed = false;
 }
 
-AudioOutput::~AudioOutput(){
+AudioOutput::~AudioOutput()
+{
 
 }
 
 
-int32_t AudioOutput::GetEstimatedDelay(){
+int32_t AudioOutput::GetEstimatedDelay()
+{
 #if defined(__ANDROID__)
-	return systemVersion<21 ? 150 : 50;
+	return systemVersion < 21 ? 150 : 50;
 #endif
 	return estimatedDelay;
 }
 
-float AudioOutput::GetLevel(){
+float AudioOutput::GetLevel()
+{
 	return 0;
 }
 
 
-void AudioOutput::EnumerateDevices(std::vector<AudioOutputDevice>& devs){
+void AudioOutput::EnumerateDevices(
+    std::vector<AudioOutputDevice> &devs)
+{
 #if defined(__APPLE__) && TARGET_OS_OSX
 	AudioOutputAudioUnit::EnumerateDevices(devs);
 #elif defined(_WIN32)
 #ifdef TGVOIP_WINXP_COMPAT
-	if(LOBYTE(LOWORD(GetVersion()))<6){
+	if(LOBYTE(LOWORD(GetVersion())) < 6) {
 		AudioOutputWave::EnumerateDevices(devs);
 		return;
 	}
 #endif
 	AudioOutputWASAPI::EnumerateDevices(devs);
 #elif defined(__linux__) && !defined(__ANDROID__)
-	if(AudioOutputPulse::IsAvailable())
+	if(AudioOutputPulse::IsAvailable()) {
 		AudioOutputPulse::EnumerateDevices(devs);
-	else
+	} else {
 		AudioOutputALSA::EnumerateDevices(devs);
+	}
 #endif
 }
 
 
-std::string AudioOutput::GetCurrentDevice(){
+std::string AudioOutput::GetCurrentDevice()
+{
 	return currentDevice;
 }
 
-void AudioOutput::SetCurrentDevice(std::string deviceID){
-	
+void AudioOutput::SetCurrentDevice(
+    std::string deviceID)
+{
+
 }
 
-bool AudioOutput::IsInitialized(){
+bool AudioOutput::IsInitialized()
+{
 	return !failed;
 }

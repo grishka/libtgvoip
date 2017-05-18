@@ -16,8 +16,8 @@
 #include "webrtc/typedefs.h"
 
 enum {
-    AecmFalse = 0,
-    AecmTrue
+	AecmFalse = 0,
+	AecmTrue
 };
 
 // Errors
@@ -31,8 +31,8 @@ enum {
 #define AECM_BAD_PARAMETER_WARNING       12100
 
 typedef struct {
-    int16_t cngMode;            // AECM_FALSE, AECM_TRUE (default)
-    int16_t echoMode;           // 0, 1, 2, 3 (default), 4
+	int16_t cngMode;            // AECM_FALSE, AECM_TRUE (default)
+	int16_t echoMode;           // 0, 1, 2, 3 (default), 4
 } AecmConfig;
 
 #ifdef __cplusplus
@@ -44,7 +44,7 @@ extern "C" {
  * initialized separately using the WebRtcAecm_Init() function.
  * Returns a pointer to the instance and a nullptr at failure.
  */
-void* WebRtcAecm_Create();
+void *WebRtcAecm_Create();
 
 /*
  * This function releases the memory allocated by WebRtcAecm_Create()
@@ -53,7 +53,7 @@ void* WebRtcAecm_Create();
  * -------------------------------------------------------------------
  * void*    aecmInst            Pointer to the AECM instance
  */
-void WebRtcAecm_Free(void* aecmInst);
+void WebRtcAecm_Free(void *aecmInst);
 
 /*
  * Initializes an AECM instance.
@@ -68,7 +68,8 @@ void WebRtcAecm_Free(void* aecmInst);
  * int32_t        return        0: OK
  *                              1200-12004,12100: error/warning
  */
-int32_t WebRtcAecm_Init(void* aecmInst, int32_t sampFreq);
+int32_t WebRtcAecm_Init(void *aecmInst,
+                        int32_t sampFreq);
 
 /*
  * Inserts an 80 or 160 sample block of data into the farend buffer.
@@ -85,8 +86,8 @@ int32_t WebRtcAecm_Init(void* aecmInst, int32_t sampFreq);
  * int32_t        return        0: OK
  *                              1200-12004,12100: error/warning
  */
-int32_t WebRtcAecm_BufferFarend(void* aecmInst,
-                                const int16_t* farend,
+int32_t WebRtcAecm_BufferFarend(void *aecmInst,
+                                const int16_t *farend,
                                 size_t nrOfSamples);
 
 /*
@@ -104,9 +105,10 @@ int32_t WebRtcAecm_BufferFarend(void* aecmInst,
  * int32_t        return        0: OK
  *                              1200-12004,12100: error/warning
  */
-int32_t WebRtcAecm_GetBufferFarendError(void* aecmInst,
-                                        const int16_t* farend,
-                                        size_t nrOfSamples);
+int32_t WebRtcAecm_GetBufferFarendError(
+    void *aecmInst,
+    const int16_t *farend,
+    size_t nrOfSamples);
 
 /*
  * Runs the AECM on an 80 or 160 sample blocks of data.
@@ -133,10 +135,10 @@ int32_t WebRtcAecm_GetBufferFarendError(void* aecmInst,
  * int32_t        return         0: OK
  *                               1200-12004,12100: error/warning
  */
-int32_t WebRtcAecm_Process(void* aecmInst,
-                           const int16_t* nearendNoisy,
-                           const int16_t* nearendClean,
-                           int16_t* out,
+int32_t WebRtcAecm_Process(void *aecmInst,
+                           const int16_t *nearendNoisy,
+                           const int16_t *nearendClean,
+                           int16_t *out,
                            size_t nrOfSamples,
                            int16_t msInSndCardBuf);
 
@@ -154,7 +156,8 @@ int32_t WebRtcAecm_Process(void* aecmInst,
  * int32_t        return        0: OK
  *                              1200-12004,12100: error/warning
  */
-int32_t WebRtcAecm_set_config(void* aecmInst, AecmConfig config);
+int32_t WebRtcAecm_set_config(void *aecmInst,
+                              AecmConfig config);
 
 /*
  * This function enables the user to set the echo path on-the-fly.
@@ -170,8 +173,8 @@ int32_t WebRtcAecm_set_config(void* aecmInst, AecmConfig config);
  * int32_t      return          0: OK
  *                              1200-12004,12100: error/warning
  */
-int32_t WebRtcAecm_InitEchoPath(void* aecmInst,
-                                const void* echo_path,
+int32_t WebRtcAecm_InitEchoPath(void *aecmInst,
+                                const void *echo_path,
                                 size_t size_bytes);
 
 /*
@@ -189,8 +192,8 @@ int32_t WebRtcAecm_InitEchoPath(void* aecmInst,
  * int32_t      return          0: OK
  *                              1200-12004,12100: error/warning
  */
-int32_t WebRtcAecm_GetEchoPath(void* aecmInst,
-                               void* echo_path,
+int32_t WebRtcAecm_GetEchoPath(void *aecmInst,
+                               void *echo_path,
                                size_t size_bytes);
 
 /*

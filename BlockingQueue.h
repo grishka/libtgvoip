@@ -13,26 +13,28 @@
 
 using namespace std;
 
-namespace tgvoip{
-class BlockingQueue{
+namespace tgvoip
+{
+class BlockingQueue {
 public:
 	BlockingQueue(size_t capacity);
 	~BlockingQueue();
-	void Put(void* thing);
-	void* GetBlocking();
-	void* Get();
+	void Put(void *thing);
+	void *GetBlocking();
+	void *Get();
 	unsigned int Size();
 	void PrepareDealloc();
-	void SetOverflowCallback(void (*overflowCallback)(void*));
+	void SetOverflowCallback(void (*overflowCallback)(
+	                             void *));
 
 private:
-	void* GetInternal();
-	list<void*> queue;
+	void *GetInternal();
+	list<void *> queue;
 	size_t capacity;
 	//tgvoip_lock_t lock;
 	Semaphore semaphore;
 	tgvoip_mutex_t mutex;
-	void (*overflowCallback)(void*);
+	void (*overflowCallback)(void *);
 };
 }
 

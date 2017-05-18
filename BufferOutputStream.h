@@ -10,8 +10,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-namespace tgvoip{
-class BufferOutputStream{
+namespace tgvoip
+{
+class BufferOutputStream {
 
 public:
 	BufferOutputStream(size_t size);
@@ -20,14 +21,15 @@ public:
 	void WriteInt64(int64_t i);
 	void WriteInt32(int32_t i);
 	void WriteInt16(int16_t i);
-	void WriteBytes(unsigned char* bytes, size_t count);
-	unsigned char* GetBuffer();
+	void WriteBytes(unsigned char *bytes,
+	                size_t count);
+	unsigned char *GetBuffer();
 	size_t GetLength();
 	void Reset();
 
 private:
 	void ExpandBufferIfNeeded(size_t need);
-	unsigned char* buffer;
+	unsigned char *buffer;
 	size_t size;
 	size_t offset;
 };

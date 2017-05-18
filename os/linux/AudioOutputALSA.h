@@ -11,33 +11,45 @@
 #include "../../threading.h"
 #include <alsa/asoundlib.h>
 
-namespace tgvoip{
-namespace audio{
+namespace tgvoip
+{
+namespace audio
+{
 
-class AudioOutputALSA : public AudioOutput{
+class AudioOutputALSA : public AudioOutput {
 public:
 	AudioOutputALSA(std::string devID);
 	virtual ~AudioOutputALSA();
-	virtual void Configure(uint32_t sampleRate, uint32_t bitsPerSample, uint32_t channels);
+	virtual void Configure(uint32_t sampleRate,
+	                       uint32_t bitsPerSample, uint32_t channels);
 	virtual void Start();
 	virtual void Stop();
 	virtual bool IsPlaying();
 	virtual void SetCurrentDevice(std::string devID);
-	static void EnumerateDevices(std::vector<AudioOutputDevice>& devs);
+	static void EnumerateDevices(
+	    std::vector<AudioOutputDevice> &devs);
 
 private:
-	static void* StartThread(void* arg);
+	static void *StartThread(void *arg);
 	void RunThread();
 
-	int (*_snd_pcm_open)(snd_pcm_t** pcm, const char* name, snd_pcm_stream_t stream, int mode);
-	int (*_snd_pcm_set_params)(snd_pcm_t* pcm, snd_pcm_format_t format, snd_pcm_access_t access, unsigned int channels, unsigned int rate, int soft_resample, unsigned int latency);
-	int (*_snd_pcm_close)(snd_pcm_t* pcm);
-	snd_pcm_sframes_t (*_snd_pcm_writei)(snd_pcm_t *pcm, const void *buffer, snd_pcm_uframes_t size);
-	int (*_snd_pcm_recover)(snd_pcm_t* pcm, int err, int silent);
-	const char* (*_snd_strerror)(int errnum);
-	void* lib;
+	int (*_snd_pcm_open)(snd_pcm_t **pcm,
+	                     const char *name, snd_pcm_stream_t stream,
+	                     int mode);
+	int (*_snd_pcm_set_params)(snd_pcm_t *pcm,
+	                           snd_pcm_format_t format, snd_pcm_access_t access,
+	                           unsigned int channels, unsigned int rate,
+	                           int soft_resample, unsigned int latency);
+	int (*_snd_pcm_close)(snd_pcm_t *pcm);
+	snd_pcm_sframes_t (*_snd_pcm_writei)(
+	    snd_pcm_t *pcm, const void *buffer,
+	    snd_pcm_uframes_t size);
+	int (*_snd_pcm_recover)(snd_pcm_t *pcm, int err,
+	                        int silent);
+	const char *(*_snd_strerror)(int errnum);
+	void *lib;
 
-	snd_pcm_t* handle;
+	snd_pcm_t *handle;
 	tgvoip_thread_t thread;
 	bool isPlaying;
 };

@@ -9,19 +9,22 @@
 
 #include <string.h>
 
-namespace tgvoip{
-class MediaStreamItf{
+namespace tgvoip
+{
+class MediaStreamItf {
 public:
-	virtual void Start()=0;
-	virtual void Stop()=0;
-	void SetCallback(size_t (*f)(unsigned char*, size_t, void*), void* param);
+	virtual void Start() = 0;
+	virtual void Stop() = 0;
+	void SetCallback(size_t (*f)(unsigned char *,
+	                             size_t, void *), void *param);
 
 //protected:
-	size_t InvokeCallback(unsigned char* data, size_t length);
+	size_t InvokeCallback(unsigned char *data,
+	                      size_t length);
 
 private:
-	size_t (*callback)(unsigned char*, size_t, void*);
-	void* callbackParam;
+	size_t (*callback)(unsigned char *, size_t, void *);
+	void *callbackParam;
 };
 }
 
