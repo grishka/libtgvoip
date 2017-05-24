@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
+#include <string.h>
 
 #include "VoIPController.h"
 
@@ -49,7 +50,7 @@ void tgvoip_log_file_write_header(){
 			OSVERSIONINFOA vInfo;
 			vInfo.dwOSVersionInfoSize=sizeof(vInfo);
 			GetVersionExA(&vInfo);
-			snprintf(systemVersion, sizeof(systemVersion), "Windows %d.%d.%d %s", vInfo.dwMajorVersion, vInfo.dwMinorVersion, vInfo.dwBuildNumber, vInfo.szCSDVersion);
+			snprintf(systemVersion, strlen(systemVersion), "Windows %d.%d.%d %s", vInfo.dwMajorVersion, vInfo.dwMinorVersion, vInfo.dwBuildNumber, vInfo.szCSDVersion);
 #else
 			char* systemVersion="Windows RT";
 #endif
@@ -62,18 +63,18 @@ void tgvoip_log_file_write_header(){
 		__system_property_get("ro.build.version.release", sysRel);
 		__system_property_get("ro.product.manufacturer", deviceVendor);
 		__system_property_get("ro.product.model", deviceModel);
-		snprintf(systemVersion, sizeof(systemVersion), "Android %s (%s %s)", sysRel, deviceVendor, deviceModel);
+		snprintf(systemVersion, strlen(systemVersion), "Android %s (%s %s)", sysRel, deviceVendor, deviceModel);
 #else
 		struct utsname sysname;
 		uname(&sysname);
 		char systemVersion[128];
-		snprintf(systemVersion, sizeof(systemVersion), "%s %s (%s)", sysname.sysname, sysname.release, sysname.version);
+		snprintf(systemVersion, strlen(systemVersion), "%s %s (%s)", sysname.sysname, sysname.release, sysname.version);
 #endif
 #elif defined(__APPLE__) && TARGET_OS_OSX
 		char osxVer[128];
-		tgvoip::DarwinSpecific::GetSystemName(osxVer, sizeof(osxVer));
+		tgvoip::DarwinSpecific::GetSystemName(osxVer, strlen(osxVer));
 		char systemVersion[128];
-		snprintf(systemVersion, sizeof(systemVersion), "OS X %s", osxVer);
+		snprintf(systemVersion, strlen(systemVersion), "OS X %s", osxVer);
 #else
 		const char* systemVersion="Unknown OS";
 #endif
