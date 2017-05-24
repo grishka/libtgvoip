@@ -203,8 +203,6 @@ VoIPController::~VoIPController(){
 	sendQueue->Put(NULL);
 	LOGD("before join sendThread");
 	join_thread(sendThread);
-	LOGD("before join recvThread");
-	join_thread(recvThread);
 	LOGD("before join tickThread");
 	join_thread(tickThread);
 	free_mutex(sendBufferMutex);
