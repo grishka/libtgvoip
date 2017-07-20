@@ -43,6 +43,7 @@ EchoCanceller::EchoCanceller(bool enableAEC, bool enableNS, bool enableAGC){
 	this->enableAEC=enableAEC;
 	this->enableAGC=enableAGC;
 	this->enableNS=enableNS;
+	isOn=true;
 	
 #ifndef TGVOIP_NO_DSP
 
@@ -163,7 +164,7 @@ void EchoCanceller::Stop(){
 
 
 void EchoCanceller::SpeakerOutCallback(unsigned char* data, size_t len){
-    if(len!=960*2 || !enableAEC)
+    if(len!=960*2 || !enableAEC || !isOn)
 		return;
 	/*size_t offset=0;
 	while(offset<len){
@@ -206,7 +207,7 @@ void EchoCanceller::RunBufferFarendThread(){
 }
 
 void EchoCanceller::Enable(bool enabled){
-	//isOn=enabled;
+	isOn=enabled;
 }
 
 void EchoCanceller::ProcessInput(unsigned char* data, unsigned char* out, size_t len){
