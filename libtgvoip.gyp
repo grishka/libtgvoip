@@ -379,6 +379,7 @@
           [
             '"<(OS)" == "linux"', {
               'defines': [
+                'TGVOIP_USE_PULSEAUDIO',
                 'WEBRTC_POSIX',
               ],
               'cflags_cc': [

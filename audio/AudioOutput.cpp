@@ -22,7 +22,9 @@
 #include "../os/windows/AudioOutputWASAPI.h"
 #elif defined(__linux__)
 #include "../os/linux/AudioOutputALSA.h"
+#ifdef TGVOIP_USE_PULSEAUDIO
 #include "../os/linux/AudioOutputPulse.h"
+#endif
 #else
 #error "Unsupported operating system"
 #endif
@@ -53,6 +55,7 @@ AudioOutput *AudioOutput::Create(std::string deviceID){
 #endif
 	return new AudioOutputWASAPI(deviceID);
 #elif defined(__linux__)
+#ifdef TGVOIP_USE_PULSEAUDIO
 	if(AudioOutputPulse::IsAvailable()){
 		AudioOutputPulse* aop=new AudioOutputPulse(deviceID);
 		if(!aop->IsInitialized())
@@ -61,6 +64,7 @@ AudioOutput *AudioOutput::Create(std::string deviceID){
 			return aop;
 		LOGW("out: PulseAudio available but not working; trying ALSA");
 	}
+#endif
 	return new AudioOutputALSA(deviceID);
 #endif
 }
@@ -102,8 +106,11 @@ void AudioOutput::EnumerateDevices(std::vector<AudioOutputDevice>& devs){
 #endif
 	AudioOutputWASAPI::EnumerateDevices(devs);
 #elif defined(__linux__) && !defined(__ANDROID__)
-	if(!AudioOutputPulse::IsAvailable() || !AudioOutputPulse::EnumerateDevices(devs))
-		AudioOutputALSA::EnumerateDevices(devs);
+#ifdef TGVOIP_USE_PULSEAUDIO
+	if(AudioOutputPulse::IsAvailable() && AudioOutputPulse::EnumerateDevices(devs))
+		return;
+#endif
+	AudioOutputALSA::EnumerateDevices(devs);
 #endif
 }
 
