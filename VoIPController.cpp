@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <inttypes.h>
+#include <cfloat>
 
 
 
