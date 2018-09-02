@@ -4,6 +4,7 @@ bin
 build
 */Debug/*
 */Release/*
+*.o
 
 # Build results
 [Dd]ebug/

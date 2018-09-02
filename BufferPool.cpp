@@ -12,7 +12,7 @@
 using namespace tgvoip;
 
 BufferPool::BufferPool(unsigned int size, unsigned int count){
-	assert(count<=64);
+	assert(count<=1024);
 	buffers[0]=(unsigned char*) malloc(size*count);
 	bufferCount=count;
 	unsigned int i;

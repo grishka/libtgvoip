@@ -24,7 +24,7 @@ private:
 	uint64_t usedBuffers;
 	int bufferCount;
 	size_t size;
-	unsigned char* buffers[64];
+	unsigned char* buffers[1024];
 	Mutex mutex;
 };
 }

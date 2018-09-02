@@ -140,7 +140,7 @@ VoIPController::VoIPController() : activeNetItfName(""),
 	audioTimestampIn=0;
 	audioTimestampOut=0;
 	stopping=false;
-	sendQueue=new BlockingQueue<PendingOutgoingPacket>(21);
+	sendQueue=new BlockingQueue<PendingOutgoingPacket>(21*4);
 	memset(recvPacketTimes, 0, sizeof(double)*32);
 	memset(&stats, 0, sizeof(TrafficStats));
 	lastRemoteAckSeq=0;
