@@ -480,7 +480,7 @@ namespace tgvoip {
 	void VideoSource_nativeSendFrame(JNIEnv* env, jobject thiz, jlong inst, jobject buffer, jint offset, jint length, jint flags){
 		size_t bufsize=(size_t)env->GetDirectBufferCapacity(buffer);
 		Buffer buf(static_cast<size_t>(length));
-		buf.CopyFrom(env->GetDirectBufferAddress(buffer)+offset, 0, static_cast<size_t>(length));
+		buf.CopyFrom((char*)env->GetDirectBufferAddress(buffer)+offset, 0, static_cast<size_t>(length));
 		((video::VideoSourceAndroid*)(intptr_t)inst)->SendFrame(std::move(buf), static_cast<uint32_t>(flags));
 	}
 
