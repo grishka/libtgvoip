@@ -1449,7 +1449,8 @@ Optional Features:
   --disable-dependency-tracking
                           speeds up one-time build
   --disable-libtool-lock  avoid locking (might break parallel builds)
-  --enable-audio-callback enable callback-based audio I/O
+  --enable-audio-callback=yes|no
+                          toggle callback-based audio I/O [default=yes]
   --disable-dsp           disable signal processing (echo cancellation, noise
                           suppression, and automatic gain control)
 
@@ -1464,8 +1465,10 @@ Optional Packages:
   --with-gnu-ld           assume the C compiler uses GNU ld [default=no]
   --with-sysroot[=DIR]    Search for dependent libraries within DIR (or the
                           compiler's sysroot if not specified).
-  --without-pulse         disable PulseAudio support
-  --without-alsa          disable ALSA support
+  --with-pulse=yes|no     toggle PulseAudio support, ignored if audio
+                          callbacks are enabled [default=yes]
+  --with-alsa=yes|no      toggle ALSA support, ignored if audio callbacks are
+                          enabled [default=yes]
 
 Some influential environment variables:
   CC          C compiler command
@@ -17818,7 +17821,7 @@ else
 
 			{ { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
 $as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error $? "libpulse-dev is required during build, but you don't have it installed. Use --without-pulse to disable PulseAudio support.
+as_fn_error $? "libpulse-dev is required during build, but you don't have it installed. Use --with-pulse=no to disable PulseAudio support.
 See \`config.log' for more details" "$LINENO" 5; }
 
 fi
@@ -17878,7 +17881,7 @@ else
 
 			{ { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
 $as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error $? "libasound-dev is required during build, but you don't have it installed. Use --without-alsa to disable ALSA support.
+as_fn_error $? "libasound-dev is required during build, but you don't have it installed. Use --with-alsa=no to disable ALSA support.
 See \`config.log' for more details" "$LINENO" 5; }
 
 fi

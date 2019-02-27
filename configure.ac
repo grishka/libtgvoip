@@ -44,14 +44,14 @@ AS_CASE([$host_os],
 )
 AM_CONDITIONAL(TARGET_OS_OSX, test "x$os_osx" == xyes)
 
-AC_ARG_ENABLE([audio-callback], [AS_HELP_STRING([--enable-audio-callback], [enable callback-based audio I/O])], [], [enable_audio_callback=yes])
+AC_ARG_ENABLE([audio-callback], [AS_HELP_STRING([--enable-audio-callback=yes|no], [toggle callback-based audio I/O [default=yes]])], [], [enable_audio_callback=yes])
 AM_CONDITIONAL(ENABLE_AUDIO_CALLBACK, test "x$enable_audio_callback" == xyes)
 
 AS_IF([test "x$os_osx" != xyes && test "x$enable_audio_callback" != xyes], [ # Linux
 	AC_CHECK_LIB([dl], [dlopen])
 
-	AC_ARG_WITH([pulse], [AS_HELP_STRING([--without-pulse], [disable PulseAudio support])], [], [with_pulse=yes])
-	AC_ARG_WITH([alsa], [AS_HELP_STRING([--without-alsa], [disable ALSA support])], [], [with_alsa=yes])
+	AC_ARG_WITH([pulse], [AS_HELP_STRING([--with-pulse=yes|no], [toggle PulseAudio support, ignored if audio callbacks are enabled [default=yes]])], [], [with_pulse=yes])
+	AC_ARG_WITH([alsa], [AS_HELP_STRING([--with-alsa=yes|no], [toggle ALSA support, ignored if audio callbacks are enabled [default=yes]])], [], [with_alsa=yes])
 
 	AS_IF([test "x$with_pulse" == xno && test "x$with_alsa" == xno], [
 		AC_MSG_FAILURE([You can only disable either ALSA or PulseAudio, not both]);
@@ -61,7 +61,7 @@ AS_IF([test "x$os_osx" != xyes && test "x$enable_audio_callback" != xyes], [ # L
 		AC_CHECK_LIB([pulse], [pa_context_new], [
 			AS_ECHO_N( ) # what is the proper way to check for a library without linking it?
 		], [
-			AC_MSG_FAILURE([libpulse-dev is required during build, but you don't have it installed. Use --without-pulse to disable PulseAudio support.])
+			AC_MSG_FAILURE([libpulse-dev is required during build, but you don't have it installed. Use --with-pulse=no to disable PulseAudio support.])
 		])
 	], [
 		AC_DEFINE([WITHOUT_PULSE], [1], [Define to disable PulseAudio support])
@@ -71,7 +71,7 @@ AS_IF([test "x$os_osx" != xyes && test "x$enable_audio_callback" != xyes], [ # L
 		AC_CHECK_LIB([asound], [snd_pcm_open], [
 			AS_ECHO_N( ) # what is the proper way to check for a library without linking it?
 		], [
-			AC_MSG_FAILURE([libasound-dev is required during build, but you don't have it installed. Use --without-alsa to disable ALSA support.])
+			AC_MSG_FAILURE([libasound-dev is required during build, but you don't have it installed. Use --with-alsa=no to disable ALSA support.])
 		])
 	], [
 		AC_DEFINE([WITHOUT_ALSA], [1], [Define to disable ALSA support])
