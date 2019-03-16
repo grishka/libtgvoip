@@ -113,7 +113,7 @@ host_triplet = @host@
 @TARGET_OS_OSX_TRUE@os/darwin/TGVVideoSource.h \
 @TARGET_OS_OSX_TRUE@os/darwin/VideoToolboxEncoderSource.h
 
-@TARGET_OS_OSX_TRUE@am__append_3 = -framework Foundation -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo
+@TARGET_OS_OSX_TRUE@am__append_3 = -framework Foundation -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework AVFoundation
 
 # Linux-specific
 @TARGET_OS_OSX_FALSE@@WITH_ALSA_TRUE@am__append_4 = \

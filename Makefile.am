@@ -82,7 +82,7 @@ os/darwin/TGVVideoRenderer.h \
 os/darwin/TGVVideoSource.h \
 os/darwin/VideoToolboxEncoderSource.h
 
-LDFLAGS += -framework Foundation -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo
+LDFLAGS += -framework Foundation -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework AVFoundation
 
 else
 # Linux-specific
