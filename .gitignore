@@ -4,7 +4,6 @@ bin
 build
 */Debug/*
 */Release/*
-*.o
 
 # Build results
 [Dd]ebug/
@@ -25,18 +24,3 @@ DerivedData/
 
 xcuserdata/
 autom4te.cache/
-
-# Autoconf build files
-*.lo
-*.Plo
-.libs
-.dirstamp
-libtool
-stamp-h1
-libtgvoip.l1
-libtgvoip.la
-config.h
-config.log
-config.status
-Makefile
-libtgvoip.la
