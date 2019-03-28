@@ -22,7 +22,7 @@ void MediaStreamItf::SetCallback(size_t (*f)(unsigned char *, size_t, void*), vo
 size_t MediaStreamItf::InvokeCallback(unsigned char *data, size_t length){
 	if(callback)
 		return (*callback)(data, length, callbackParam);
-	return NULL;
+	return 0;
 }
 
 AudioMixer::AudioMixer() : bufferPool(960*2, 16), processedQueue(16), semaphore(16, 0){
@@ -39,9 +39,9 @@ void AudioMixer::SetOutput(MediaStreamItf* output){
 void AudioMixer::Start(){
 	assert(!running);
 	running=true;
-	thread=new Thread(new MethodPointer<AudioMixer>(&AudioMixer::RunThread, this), NULL);
-	thread->Start();
+	thread=new Thread(std::bind(&AudioMixer::RunThread, this));
 	thread->SetName("AudioMixer");
+	thread->Start();
 }
 
 void AudioMixer::Stop(){
@@ -104,7 +104,7 @@ void AudioMixer::SetInputVolume(std::shared_ptr<MediaStreamItf> input, float vol
 	}
 }
 
-void AudioMixer::RunThread(void* arg){
+void AudioMixer::RunThread(){
 	LOGV("AudioMixer thread started");
 	while(running){
 		semaphore.Acquire();

@@ -23,10 +23,19 @@
 #define kOutputBus 0
 #define kInputBus 1
 
+#if TARGET_OS_OSX && !defined(TGVOIP_NO_OSX_PRIVATE_API)
+extern "C" {
+OSStatus AudioDeviceDuck(AudioDeviceID inDevice,
+                         Float32 inDuckedLevel,
+                         const AudioTimeStamp* __nullable inStartTime,
+                         Float32 inRampDuration) __attribute__((weak_import));
+}
+#endif
+
 using namespace tgvoip;
 using namespace tgvoip::audio;
 
-AudioUnitIO::AudioUnitIO(){
+AudioUnitIO::AudioUnitIO(std::string inputDeviceID, std::string outputDeviceID){
 	input=NULL;
 	output=NULL;
 	inputEnabled=false;
@@ -36,6 +45,10 @@ AudioUnitIO::AudioUnitIO(){
 	inBufferList.mBuffers[0].mData=malloc(INPUT_BUFFER_SIZE);
 	inBufferList.mBuffers[0].mDataByteSize=INPUT_BUFFER_SIZE;
 	inBufferList.mNumberBuffers=1;
+	
+#if TARGET_OS_IPHONE
+	DarwinSpecific::ConfigureAudioSession();
+#endif
 	
 	OSStatus status;
 	AudioComponentDescription desc;
@@ -108,11 +121,13 @@ AudioUnitIO::AudioUnitIO(){
 	AudioObjectAddPropertyListener(kAudioObjectSystemObject, &propertyAddress, AudioUnitIO::DefaultDeviceChangedCallback, this);
 	propertyAddress.mSelector = kAudioHardwarePropertyDefaultInputDevice;
 	AudioObjectAddPropertyListener(kAudioObjectSystemObject, &propertyAddress, AudioUnitIO::DefaultDeviceChangedCallback, this);
+	
+	
 #endif
 	
 	
-	input=new AudioInputAudioUnit("default", this);
-	output=new AudioOutputAudioUnit("default", this);
+	input=new AudioInputAudioUnit(inputDeviceID, this);
+	output=new AudioOutputAudioUnit(outputDeviceID, this);
 }
 
 AudioUnitIO::~AudioUnitIO(){
@@ -125,12 +140,12 @@ AudioUnitIO::~AudioUnitIO(){
 	propertyAddress.mSelector = kAudioHardwarePropertyDefaultInputDevice;
 	AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &propertyAddress, AudioUnitIO::DefaultDeviceChangedCallback, this);
 #endif
-	delete input;
-	delete output;
 	AudioOutputUnitStop(unit);
 	AudioUnitUninitialize(unit);
 	AudioComponentInstanceDispose(unit);
 	free(inBufferList.mBuffers[0].mData);
+	delete input;
+	delete output;
 }
 
 OSStatus AudioUnitIO::BufferCallback(void *inRefCon, AudioUnitRenderActionFlags *ioActionFlags, const AudioTimeStamp *inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList *ioData){
@@ -162,6 +177,12 @@ void AudioUnitIO::EnableInput(bool enabled){
 void AudioUnitIO::EnableOutput(bool enabled){
 	outputEnabled=enabled;
 	StartIfNeeded();
+#if TARGET_OS_OSX && !defined(TGVOIP_NO_OSX_PRIVATE_API)
+	if(actualDuckingEnabled!=duckingEnabled){
+		actualDuckingEnabled=duckingEnabled;
+    	AudioDeviceDuck(currentOutputDeviceID, duckingEnabled ? 0.177828f : 1.0f, NULL, 0.1f);
+	}
+#endif
 }
 
 void AudioUnitIO::StartIfNeeded(){
@@ -200,6 +221,7 @@ OSStatus AudioUnitIO::DefaultDeviceChangedCallback(AudioObjectID inObjectID, UIn
 }
 
 void AudioUnitIO::SetCurrentDevice(bool input, std::string deviceID){
+	LOGV("Setting current %sput device: %s", input ? "in" : "out", deviceID.c_str());
 	if(started){
 		AudioOutputUnitStop(unit);
 		AudioUnitUninitialize(unit);
@@ -264,7 +286,6 @@ void AudioUnitIO::SetCurrentDevice(bool input, std::string deviceID){
 	else
 		currentOutputDevice=deviceID;
 	
-	
 	/*AudioObjectPropertyAddress propertyAddress = {
 		kAudioDevicePropertyBufferFrameSize,
 		kAudioObjectPropertyScopeGlobal,
@@ -281,6 +302,20 @@ void AudioUnitIO::SetCurrentDevice(bool input, std::string deviceID){
 		started=false;
 		StartIfNeeded();
 	}
+	if(!input){
+		currentOutputDeviceID=device;
+	}
+	LOGV("Set current %sput device done", input ? "in" : "out");
+}
+
+void AudioUnitIO::SetDuckingEnabled(bool enabled){
+	duckingEnabled=enabled;
+#ifndef TGVOIP_NO_OSX_PRIVATE_API
+	if(outputEnabled && duckingEnabled!=actualDuckingEnabled){
+		actualDuckingEnabled=enabled;
+    	AudioDeviceDuck(currentOutputDeviceID, enabled ? 0.177828f : 1.0f, NULL, 0.1f);
+	}
+#endif
 }
 
 #endif

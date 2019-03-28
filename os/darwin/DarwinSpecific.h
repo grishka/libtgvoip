@@ -10,6 +10,9 @@
 #include <string>
 
 namespace tgvoip {
+	
+	struct CellularCarrierInfo;
+	
 class DarwinSpecific{
 public:
 	enum{
@@ -21,6 +24,8 @@ public:
 	};
 	static void GetSystemName(char* buf, size_t len);
 	static void SetCurrentThreadPriority(int priority);
+	static CellularCarrierInfo GetCarrierInfo();
+	static void ConfigureAudioSession();
 };
 }
 

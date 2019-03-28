@@ -17,6 +17,7 @@
 #include <limits>
 #include <stddef.h>
 #include "threading.h"
+#include "utils.h"
 
 namespace tgvoip{
 	class Buffer;
@@ -24,7 +25,8 @@ namespace tgvoip{
 	class BufferInputStream{
 
 	public:
-		BufferInputStream(unsigned char* data, size_t length);
+		BufferInputStream(const unsigned char* data, size_t length);
+		BufferInputStream(const Buffer& buffer);
 		~BufferInputStream();
 		void Seek(size_t offset);
 		size_t GetLength();
@@ -36,11 +38,12 @@ namespace tgvoip{
 		int16_t ReadInt16();
 		int32_t ReadTlLength();
 		void ReadBytes(unsigned char* to, size_t count);
+		void ReadBytes(Buffer& to);
 		BufferInputStream GetPartBuffer(size_t length, bool advance);
 
 	private:
 		void EnsureEnoughRemaining(size_t need);
-		unsigned char* buffer;
+		const unsigned char* buffer;
 		size_t length;
 		size_t offset;
 	};
@@ -48,16 +51,17 @@ namespace tgvoip{
 	class BufferOutputStream{
 	friend class Buffer;
 	public:
+		TGVOIP_DISALLOW_COPY_AND_ASSIGN(BufferOutputStream);
 		BufferOutputStream(size_t size);
 		BufferOutputStream(unsigned char* buffer, size_t size);
-		BufferOutputStream(const BufferOutputStream& other)=delete;
 		~BufferOutputStream();
 		void WriteByte(unsigned char byte);
 		void WriteInt64(int64_t i);
 		void WriteInt32(int32_t i);
 		void WriteInt16(int16_t i);
-		void WriteBytes(unsigned char* bytes, size_t count);
-		void WriteBytes(Buffer& buffer);
+		void WriteBytes(const unsigned char* bytes, size_t count);
+		void WriteBytes(const Buffer& buffer);
+		void WriteBytes(const Buffer& buffer, size_t offset, size_t count);
 		unsigned char* GetBuffer();
 		size_t GetLength();
 		void Reset();
@@ -86,6 +90,7 @@ namespace tgvoip{
 
 	class BufferPool{
 	public:
+		TGVOIP_DISALLOW_COPY_AND_ASSIGN(BufferPool);
 		BufferPool(unsigned int size, unsigned int count);
 		~BufferPool();
 		unsigned char* Get();
@@ -110,7 +115,7 @@ namespace tgvoip{
 				data=NULL;
 			length=capacity;
 		};
-		Buffer(const Buffer& other)=delete;
+		TGVOIP_DISALLOW_COPY_AND_ASSIGN(Buffer); // use Buffer::CopyOf to copy contents explicitly
 		Buffer(Buffer&& other) noexcept {
 			data=other.data;
 			length=other.length;
@@ -156,7 +161,7 @@ namespace tgvoip{
 		const unsigned char* operator*() const{
 			return data;
 		}
-		void CopyFrom(Buffer& other, size_t count, size_t srcOffset=0, size_t dstOffset=0){
+		void CopyFrom(const Buffer& other, size_t count, size_t srcOffset=0, size_t dstOffset=0){
 			if(!other.data)
 				throw std::invalid_argument("CopyFrom can't copy from NULL");
 			if(other.length<srcOffset+count || length<dstOffset+count)
@@ -172,8 +177,16 @@ namespace tgvoip{
 			data=(unsigned char *) realloc(data, newSize);
 			length=newSize;
 		}
-		size_t Length(){
+		size_t Length() const{
 			return length;
+		}
+		bool IsEmpty() const{
+			return length==0;
+		}
+		static Buffer CopyOf(const Buffer& other){
+			Buffer buf(other.length);
+			buf.CopyFrom(other, other.length);
+			return buf;
 		}
 	private:
 		unsigned char* data;
@@ -251,6 +264,10 @@ namespace tgvoip{
 			if(_i<0)
 				_i=size+_i;
 			return data[_i];
+		}
+
+		size_t Size(){
+			return size;
 		}
 	private:
 		std::array<T, size> data;

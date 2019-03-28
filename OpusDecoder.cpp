@@ -158,7 +158,7 @@ void tgvoip::OpusDecoder::Start(){
 	if(!async)
 		return;
 	running=true;
-	thread=new Thread(new MethodPointer<tgvoip::OpusDecoder>(&tgvoip::OpusDecoder::RunThread, this), NULL);
+	thread=new Thread(std::bind(&tgvoip::OpusDecoder::RunThread, this));
 	thread->SetName("opus_decoder");
 	thread->SetMaxPriority();
 	thread->Start();
@@ -173,7 +173,7 @@ void tgvoip::OpusDecoder::Stop(){
 	delete thread;
 }
 
-void tgvoip::OpusDecoder::RunThread(void* param){
+void tgvoip::OpusDecoder::RunThread(){
 	int i;
 	LOGI("decoder: packets per frame %d", packetsPerFrame);
 	while(running){
@@ -187,8 +187,8 @@ void tgvoip::OpusDecoder::RunThread(void* param){
 			unsigned char *buf=bufferPool->Get();
 			if(buf){
 				if(remainingDataLen>0){
-					for(std::vector<AudioEffect*>::iterator effect=postProcEffects.begin();effect!=postProcEffects.end();++effect){
-						(*effect)->Process(reinterpret_cast<int16_t*>(processedBuffer+(PACKET_SIZE*i)), 960);
+					for(effects::AudioEffect*& effect:postProcEffects){
+						effect->Process(reinterpret_cast<int16_t*>(processedBuffer+(PACKET_SIZE*i)), 960);
 					}
 					memcpy(buf, processedBuffer+(PACKET_SIZE*i), PACKET_SIZE);
 				}else{
@@ -279,12 +279,12 @@ void tgvoip::OpusDecoder::SetLevelMeter(AudioLevelMeter *levelMeter){
 	this->levelMeter=levelMeter;
 }
 
-void tgvoip::OpusDecoder::AddAudioEffect(AudioEffect *effect){
+void tgvoip::OpusDecoder::AddAudioEffect(effects::AudioEffect *effect){
 	postProcEffects.push_back(effect);
 }
 
-void tgvoip::OpusDecoder::RemoveAudioEffect(AudioEffect *effect){
-	std::vector<AudioEffect*>::iterator i=std::find(postProcEffects.begin(), postProcEffects.end(), effect);
+void tgvoip::OpusDecoder::RemoveAudioEffect(effects::AudioEffect *effect){
+	std::vector<effects::AudioEffect*>::iterator i=std::find(postProcEffects.begin(), postProcEffects.end(), effect);
 	if(i!=postProcEffects.end())
 		postProcEffects.erase(i);
 }

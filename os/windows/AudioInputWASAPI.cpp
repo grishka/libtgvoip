@@ -31,7 +31,9 @@ AudioInputWASAPI::AudioInputWASAPI(std::string deviceID){
 	refCount=1;
 	HRESULT res;
 	res=CoInitializeEx(NULL, COINIT_MULTITHREADED);
-	CHECK_RES(res, "CoInitializeEx");
+	if(FAILED(res) && res!=RPC_E_CHANGED_MODE){
+		CHECK_RES(res, "CoInitializeEx");
+	}
 #ifdef TGVOIP_WINXP_COMPAT
 	HANDLE (WINAPI *__CreateEventExA)(LPSECURITY_ATTRIBUTES lpEventAttributes, LPCSTR lpName, DWORD dwFlags, DWORD dwDesiredAccess);
 	__CreateEventExA=(HANDLE (WINAPI *)(LPSECURITY_ATTRIBUTES, LPCSTR, DWORD, DWORD))GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateEventExA");
@@ -124,7 +126,9 @@ void AudioInputWASAPI::EnumerateDevices(std::vector<tgvoip::AudioInputDevice>& d
 #ifdef TGVOIP_WINDOWS_DESKTOP
 	HRESULT res;
 	res=CoInitializeEx(NULL, COINIT_MULTITHREADED);
-	SCHECK_RES(res, "CoInitializeEx");
+	if(FAILED(res) && res!=RPC_E_CHANGED_MODE){
+		SCHECK_RES(res, "CoInitializeEx");
+	}
 
 	IMMDeviceEnumerator *deviceEnumerator = NULL;
 	IMMDeviceCollection *deviceCollection = NULL;
@@ -260,9 +264,27 @@ void AudioInputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 	res=device->Activate(__uuidof(IAudioClient), CLSCTX_INPROC_SERVER, NULL, (void**)&audioClient);
 	CHECK_RES(res, "device->Activate");
 #else
-	Platform::String^ defaultDevID=Windows::Media::Devices::MediaDevice::GetDefaultAudioCaptureId(Windows::Media::Devices::AudioDeviceRole::Communications);
+	std::wstring devID;
+
+	if (deviceID=="default"){
+		Platform::String^ defaultDevID=Windows::Media::Devices::MediaDevice::GetDefaultAudioCaptureId(Windows::Media::Devices::AudioDeviceRole::Communications);
+		if(defaultDevID==nullptr){
+			LOGE("Didn't find capture device; failing");
+			failed=true;
+			return;
+		}else{
+			isDefaultDevice=true;
+			devID=defaultDevID->Data();
+		}
+	}else{
+		int wchars_num=MultiByteToWideChar(CP_UTF8, 0, deviceID.c_str(), -1, NULL, 0);
+		wchar_t* wstr=new wchar_t[wchars_num];
+		MultiByteToWideChar(CP_UTF8, 0, deviceID.c_str(), -1, wstr, wchars_num);
+		devID=wstr;
+	}
+
 	HRESULT res1, res2;
-	IAudioClient2* audioClient2=WindowsSandboxUtils::ActivateAudioDevice(defaultDevID->Data(), &res1, &res2);
+	IAudioClient2* audioClient2=WindowsSandboxUtils::ActivateAudioDevice(devID.c_str(), &res1, &res2);
 	CHECK_RES(res1, "activate1");
 	CHECK_RES(res2, "activate2");
 
@@ -274,11 +296,11 @@ void AudioInputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 
 	audioClient=audioClient2;
 #endif
-	
-	
+
 	// {2C693079-3F59-49FD-964F-61C005EAA5D3}
 	const GUID guid = { 0x2c693079, 0x3f59, 0x49fd, { 0x96, 0x4f, 0x61, 0xc0, 0x5, 0xea, 0xa5, 0xd3 } };
-	res = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST | 0x80000000/*AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM*/, 60 * 10000, 0, &format, &guid);
+	// Use 1000ms buffer to avoid resampling glitches on Windows 8.1 and older. This should not increase latency.
+	res = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, 1000*10000, 0, &format, &guid);
 	CHECK_RES(res, "audioClient->Initialize");
 
 	uint32_t bufSize;
@@ -286,12 +308,12 @@ void AudioInputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 	CHECK_RES(res, "audioClient->GetBufferSize");
 
 	LOGV("buffer size: %u", bufSize);
-	REFERENCE_TIME latency;
+	estimatedDelay=0;
+	REFERENCE_TIME latency, devicePeriod;
 	if(SUCCEEDED(audioClient->GetStreamLatency(&latency))){
-		estimatedDelay=latency ? latency/10000 : 60;
-		LOGD("capture latency: %d", estimatedDelay);
-	}else{
-		estimatedDelay=60;
+		if(SUCCEEDED(audioClient->GetDevicePeriod(&devicePeriod, NULL))){
+			estimatedDelay=(int32_t)(latency/10000+devicePeriod/10000);
+		}
 	}
 
 	res = audioClient->SetEventHandle(audioSamplesReadyEvent);
@@ -330,7 +352,7 @@ void AudioInputWASAPI::RunThread() {
 	CHECK_RES(res, "CoInitializeEx in capture thread");
 
 	uint32_t bufferSize=0;
-	uint32_t framesWritten=0;
+	uint64_t framesWritten=0;
 
 	bool running=true;
 	//double prevCallback=VoIPController::GetCurrentTime();
@@ -352,7 +374,7 @@ void AudioInputWASAPI::RunThread() {
 			res=captureClient->GetNextPacketSize(&bufferSize);
 			CHECK_RES(res, "captureClient->GetNextPacketSize");
 			BYTE* data;
-			uint32_t framesAvailable=bufferSize;
+			uint32_t framesAvailable=0;
 			DWORD flags;
 
 			res=captureClient->GetBuffer(&data, &framesAvailable, &flags, NULL, NULL);
@@ -360,8 +382,12 @@ void AudioInputWASAPI::RunThread() {
 			size_t dataLen=framesAvailable*2;
 			assert(remainingDataLen+dataLen<sizeof(remainingData));
 
+			if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY){
+				LOGW("Audio capture data discontinuity");
+			}
+
 			//double t=VoIPController::GetCurrentTime();
-			//LOGV("audio capture: %u, time %f", framesAvailable, t-prevCallback);
+			//LOGV("audio capture: %u, time %f, flags %u", framesAvailable, t-prevCallback, flags);
 			//prevCallback=t;
 
 			memcpy(remainingData+remainingDataLen, data, dataLen);
@@ -369,6 +395,7 @@ void AudioInputWASAPI::RunThread() {
 			while(remainingDataLen>960*2){
 				if(isRecording)
 					InvokeCallback(remainingData, 960*2);
+
 				//LOGV("remaining data len %u", remainingDataLen);
 				memmove(remainingData, remainingData+(960*2), remainingDataLen-960*2);
 				remainingDataLen-=960*2;
@@ -376,6 +403,7 @@ void AudioInputWASAPI::RunThread() {
 
 			res=captureClient->ReleaseBuffer(framesAvailable);
 			CHECK_RES(res, "captureClient->ReleaseBuffer");
+			//estimatedDelay=(int32_t)((devicePosition-framesWritten)/48);
 
 			framesWritten+=framesAvailable;
 		}

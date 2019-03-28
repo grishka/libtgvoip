@@ -35,7 +35,9 @@ AudioOutputWASAPI::AudioOutputWASAPI(std::string deviceID){
 	refCount=1;
 	HRESULT res;
 	res=CoInitializeEx(NULL, COINIT_MULTITHREADED);
-	CHECK_RES(res, "CoInitializeEx");
+	if(FAILED(res) && res!=RPC_E_CHANGED_MODE){
+		CHECK_RES(res, "CoInitializeEx");
+	}
 #ifdef TGVOIP_WINXP_COMPAT
 	HANDLE (WINAPI *__CreateEventExA)(LPSECURITY_ATTRIBUTES lpEventAttributes, LPCSTR lpName, DWORD dwFlags, DWORD dwDesiredAccess);
 	__CreateEventExA=(HANDLE (WINAPI *)(LPSECURITY_ATTRIBUTES, LPCSTR, DWORD, DWORD))GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateEventExA");
@@ -120,7 +122,9 @@ void AudioOutputWASAPI::EnumerateDevices(std::vector<tgvoip::AudioOutputDevice>&
 #ifdef TGVOIP_WINDOWS_DESKTOP
 	HRESULT res;
 	res=CoInitializeEx(NULL, COINIT_MULTITHREADED);
-	SCHECK_RES(res, "CoInitializeEx");
+	if(FAILED(res) && res!=RPC_E_CHANGED_MODE){
+		SCHECK_RES(res, "CoInitializeEx");
+	}
 
 	IMMDeviceEnumerator *deviceEnumerator = NULL;
 	IMMDeviceCollection *deviceCollection = NULL;
@@ -256,9 +260,27 @@ void AudioOutputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 	res=device->Activate(__uuidof(IAudioClient), CLSCTX_INPROC_SERVER, NULL, (void**)&audioClient);
 	CHECK_RES(res, "device->Activate");
 #else
-	Platform::String^ defaultDevID=Windows::Media::Devices::MediaDevice::GetDefaultAudioRenderId(Windows::Media::Devices::AudioDeviceRole::Communications);
+	std::wstring devID;
+
+	if (deviceID=="default"){
+		Platform::String^ defaultDevID=Windows::Media::Devices::MediaDevice::GetDefaultAudioRenderId(Windows::Media::Devices::AudioDeviceRole::Communications);
+		if(defaultDevID==nullptr){
+			LOGE("Didn't find playback device; failing");
+			failed=true;
+			return;
+		}else{
+			isDefaultDevice=true;
+			devID=defaultDevID->Data();
+		}
+	}else{
+		int wchars_num=MultiByteToWideChar(CP_UTF8, 0, deviceID.c_str(), -1, NULL, 0);
+		wchar_t* wstr=new wchar_t[wchars_num];
+		MultiByteToWideChar(CP_UTF8, 0, deviceID.c_str(), -1, wstr, wchars_num);
+		devID=wstr;
+	}
+
 	HRESULT res1, res2;
-	IAudioClient2* audioClient2=WindowsSandboxUtils::ActivateAudioDevice(defaultDevID->Data(), &res1, &res2);
+	IAudioClient2* audioClient2=WindowsSandboxUtils::ActivateAudioDevice(devID.c_str(), &res1, &res2);
 	CHECK_RES(res1, "activate1");
 	CHECK_RES(res2, "activate2");
 
@@ -273,7 +295,7 @@ void AudioOutputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 
 	// {2C693079-3F59-49FD-964F-61C005EAA5D3}
 	const GUID guid = { 0x2c693079, 0x3f59, 0x49fd, { 0x96, 0x4f, 0x61, 0xc0, 0x5, 0xea, 0xa5, 0xd3 } };
-	res = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST | 0x80000000/*AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM*/, 60 * 10000, 0, &format, &guid);
+	res = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, 60 * 10000, 0, &format, &guid);
 	CHECK_RES(res, "audioClient->Initialize");
 
 	uint32_t bufSize;
@@ -281,12 +303,12 @@ void AudioOutputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 	CHECK_RES(res, "audioClient->GetBufferSize");
 
 	LOGV("buffer size: %u", bufSize);
-	REFERENCE_TIME latency;
+	estimatedDelay=0;
+	REFERENCE_TIME latency, devicePeriod;
 	if(SUCCEEDED(audioClient->GetStreamLatency(&latency))){
-		estimatedDelay=latency ? latency/10000 : 60;
-		LOGD("playback latency: %d", estimatedDelay);
-	}else{
-		estimatedDelay=60;
+		if(SUCCEEDED(audioClient->GetDevicePeriod(&devicePeriod, NULL))){
+			estimatedDelay=(int32_t)(latency/10000+devicePeriod/10000);
+		}
 	}
 
 	res = audioClient->SetEventHandle(audioSamplesReadyEvent);
@@ -330,7 +352,7 @@ void AudioOutputWASAPI::RunThread() {
 	uint32_t bufferSize;
 	res=audioClient->GetBufferSize(&bufferSize);
 	CHECK_RES(res, "audioClient->GetBufferSize");
-	uint32_t framesWritten=0;
+	uint64_t framesWritten=0;
 
 	bool running=true;
 	//double prevCallback=VoIPController::GetCurrentTime();
@@ -348,6 +370,7 @@ void AudioOutputWASAPI::RunThread() {
 		}else if(waitResult==WAIT_OBJECT_0+2){ // audioSamplesReadyEvent
 			if(!audioClient)
 				continue;
+
 			BYTE* data;
 			uint32_t padding;
 			uint32_t framesAvailable;

@@ -39,11 +39,14 @@ VoIPControllerWrapper::VoIPControllerWrapper(){
 	MicrosoftCryptoImpl::Init();
 	controller=new VoIPController();
 	controller->implData=(void*)this;
-	controller->SetStateCallback(VoIPControllerWrapper::OnStateChanged);
-	controller->SetSignalBarsCountCallback(VoIPControllerWrapper::OnSignalBarsChanged);
+	VoIPController::Callbacks callbacks={0};
+	callbacks.connectionStateChanged=VoIPControllerWrapper::OnStateChanged;
+	callbacks.signalBarCountChanged=VoIPControllerWrapper::OnSignalBarsChanged;
+	controller->SetCallbacks(callbacks);
 }
 
 VoIPControllerWrapper::~VoIPControllerWrapper(){
+	controller->Stop();
 	delete controller;
 }
 
@@ -55,14 +58,14 @@ void VoIPControllerWrapper::Connect(){
 	controller->Connect();
 }
 
-void VoIPControllerWrapper::SetPublicEndpoints(const Platform::Array<libtgvoip::Endpoint^>^ endpoints, bool allowP2P){
+void VoIPControllerWrapper::SetPublicEndpoints(const Platform::Array<libtgvoip::Endpoint^>^ endpoints, bool allowP2P, int32_t connectionMaxLayer){
 	std::vector<tgvoip::Endpoint> eps;
-	for (int i = 0; i < endpoints->Length; i++)
+	for (unsigned int i = 0; i < endpoints->Length; i++)
 	{
 		libtgvoip::Endpoint^ _ep = endpoints[i];
 		tgvoip::Endpoint ep;
 		ep.id = _ep->id;
-		ep.type = Endpoint::TYPE_UDP_RELAY;
+		ep.type = tgvoip::Endpoint::Type::UDP_RELAY;
 		char buf[128];
 		if (_ep->ipv4){
 			WideCharToMultiByte(CP_UTF8, 0, _ep->ipv4->Data(), -1, buf, sizeof(buf), NULL, NULL);
@@ -78,7 +81,7 @@ void VoIPControllerWrapper::SetPublicEndpoints(const Platform::Array<libtgvoip::
 		memcpy(ep.peerTag, _ep->peerTag->Data, 16);
 		eps.push_back(ep);
 	}
-	controller->SetRemoteEndpoints(eps, allowP2P);
+	controller->SetRemoteEndpoints(eps, allowP2P, connectionMaxLayer);
 }
 
 void VoIPControllerWrapper::SetNetworkType(NetworkType type){
@@ -93,18 +96,45 @@ int64 VoIPControllerWrapper::GetPreferredRelayID(){
 	return controller->GetPreferredRelayID();
 }
 
+int32_t VoIPControllerWrapper::GetConnectionMaxLayer(){
+	return tgvoip::VoIPController::GetConnectionMaxLayer();
+}
+
 void VoIPControllerWrapper::SetEncryptionKey(const Platform::Array<uint8>^ key, bool isOutgoing){
 	if(key->Length!=256)
 		throw ref new Platform::InvalidArgumentException("Encryption key must be exactly 256 bytes long");
 	controller->SetEncryptionKey((char*)key->Data, isOutgoing);
 }
 
+int VoIPControllerWrapper::GetSignalBarsCount(){
+	return controller->GetSignalBarsCount();
+}
+
+CallState VoIPControllerWrapper::GetConnectionState(){
+	return (CallState)controller->GetConnectionState();
+}
+
+TrafficStats^ VoIPControllerWrapper::GetStats(){
+	tgvoip::VoIPController::TrafficStats _stats;
+	controller->GetStats(&_stats);
+
+	TrafficStats^ stats = ref new TrafficStats();
+	stats->bytesSentWifi = _stats.bytesSentWifi;
+	stats->bytesSentMobile = _stats.bytesSentMobile;
+	stats->bytesRecvdWifi = _stats.bytesRecvdWifi;
+	stats->bytesRecvdMobile = _stats.bytesRecvdMobile;
+
+	return stats;
+}
+
 Platform::String^ VoIPControllerWrapper::GetDebugString(){
-	char abuf[10240];
-	controller->GetDebugString(abuf, sizeof(abuf));
-	wchar_t wbuf[10240];
-	MultiByteToWideChar(CP_UTF8, 0, abuf, -1, wbuf, sizeof(wbuf));
-	return ref new Platform::String(wbuf);
+	std::string log = controller->GetDebugString();
+	size_t len = sizeof(wchar_t)*(log.length() + 1);
+	wchar_t* wlog = (wchar_t*)malloc(len);
+	MultiByteToWideChar(CP_UTF8, 0, log.c_str(), -1, wlog, len / sizeof(wchar_t));
+	Platform::String^ res = ref new Platform::String(wlog);
+	free(wlog);
+	return res;
 }
 
 Platform::String^ VoIPControllerWrapper::GetDebugLog(){
@@ -144,21 +174,34 @@ void VoIPControllerWrapper::OnSignalBarsChangedInternal(int count){
 	SignalBarsChanged(this, count);
 }
 
-void VoIPControllerWrapper::SetConfig(double initTimeout, double recvTimeout, DataSavingMode dataSavingMode, bool enableAEC, bool enableNS, bool enableAGC, Platform::String^ logFilePath, Platform::String^ statsDumpFilePath){
+void VoIPControllerWrapper::SetConfig(VoIPConfig^ wrapper){
 	VoIPController::Config config{0};
-	config.initTimeout=initTimeout;
-	config.recvTimeout=recvTimeout;
-	config.dataSaving=(int)dataSavingMode;
-	config.enableAEC=enableAEC;
-	config.enableAGC=enableAGC;
-	config.enableNS=enableNS;
-	if(logFilePath!=nullptr&&!logFilePath->IsEmpty()){
-		WideCharToMultiByte(CP_UTF8, 0, logFilePath->Data(), -1, config.logFilePath, sizeof(config.logFilePath), NULL, NULL);
+	config.initTimeout=wrapper->initTimeout;
+	config.recvTimeout=wrapper->recvTimeout;
+	config.dataSaving=(int)wrapper->dataSaving;
+	config.logFilePath;
+	config.statsDumpFilePath;
+
+	config.enableAEC=wrapper->enableAEC;
+	config.enableNS=wrapper->enableNS;
+	config.enableAGC=wrapper->enableAGC;
+
+	config.enableCallUpgrade=wrapper->enableCallUpgrade;
+
+	config.logPacketStats=wrapper->logPacketStats;
+	config.enableVolumeControl=wrapper->enableVolumeControl;
+
+	config.enableVideoSend=wrapper->enableVideoSend;
+	config.enableVideoReceive=wrapper->enableVideoReceive;
+
+	if(wrapper->logFilePath!=nullptr&&!wrapper->logFilePath->IsEmpty()){
+		config.logFilePath = wstring(wrapper->logFilePath->Data());
 	}
-	if(statsDumpFilePath!=nullptr&&!statsDumpFilePath->IsEmpty()){
-		WideCharToMultiByte(CP_UTF8, 0, statsDumpFilePath->Data(), -1, config.statsDumpFilePath, sizeof(config.statsDumpFilePath), NULL, NULL);
+	if (wrapper->statsDumpFilePath != nullptr&&!wrapper->statsDumpFilePath->IsEmpty()){
+		config.statsDumpFilePath = wstring(wrapper->statsDumpFilePath->Data());
 	}
-	controller->SetConfig(&config);
+
+	controller->SetConfig(config);
 }
 
 void VoIPControllerWrapper::SetProxy(ProxyProtocol protocol, Platform::String^ address, uint16_t port, Platform::String^ username, Platform::String^ password){
@@ -177,24 +220,16 @@ void VoIPControllerWrapper::SetAudioOutputGainControlEnabled(bool enabled){
 	controller->SetAudioOutputGainControlEnabled(enabled);
 }
 
+void VoIPControllerWrapper::SetInputVolume(float level){
+	controller->SetInputVolume(level);
+}
+
+void VoIPControllerWrapper::SetOutputVolume(float level){
+	controller->SetOutputVolume(level);
+}
+
 void VoIPControllerWrapper::UpdateServerConfig(Platform::String^ json){
-	JsonObject^ jconfig=JsonValue::Parse(json)->GetObject();
-	std::map<std::string, std::string> config;
-
-	for each (auto item in jconfig){
-		char _key[128];
-		char _value[256];
-		WideCharToMultiByte(CP_UTF8, 0, item->Key->Data(), -1, _key, sizeof(_key), NULL, NULL);
-		if(item->Value->ValueType==Windows::Data::Json::JsonValueType::String)
-			WideCharToMultiByte(CP_UTF8, 0, item->Value->GetString()->Data(), -1, _value, sizeof(_value), NULL, NULL);
-		else
-			WideCharToMultiByte(CP_UTF8, 0, item->Value->ToString()->Data(), -1, _value, sizeof(_value), NULL, NULL);
-		std::string key(_key);
-		std::string value(_value);
-
-		config[key]=value;
-	}
-
+	std::string config=ToUtf8(json->Data(), json->Length());
 	ServerConfig::GetSharedInstance()->Update(config);
 }
 

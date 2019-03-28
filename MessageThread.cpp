@@ -6,6 +6,7 @@
 #include <time.h>
 #include <math.h>
 #include <float.h>
+#include <stdint.h>
 
 #ifndef _WIN32
 #include <sys/time.h>
@@ -17,12 +18,16 @@
 
 using namespace tgvoip;
 
-MessageThread::MessageThread() : Thread(new MethodPointer<MessageThread>(&MessageThread::Run, this), NULL){
+MessageThread::MessageThread() : Thread(std::bind(&MessageThread::Run, this)){
 
 	SetName("MessageThread");
 
 #ifdef _WIN32
+#if !defined(WINAPI_FAMILY) || WINAPI_FAMILY!=WINAPI_FAMILY_PHONE_APP
 	event=CreateEvent(NULL, false, false, NULL);
+#else
+	event=CreateEventEx(NULL, NULL, 0, EVENT_ALL_ACCESS);
+#endif
 #else
 	pthread_cond_init(&cond, NULL);
 #endif
@@ -49,7 +54,7 @@ void MessageThread::Stop(){
 	}
 }
 
-void MessageThread::Run(void* arg){
+void MessageThread::Run(){
 	queueMutex.Lock();
 	while(running){
 		double currentTime=VoIPController::GetCurrentTime();
@@ -59,7 +64,11 @@ void MessageThread::Run(void* arg){
 #ifdef _WIN32
 			queueMutex.Unlock();
 			DWORD actualWaitTimeout=waitTimeout==DBL_MAX ? INFINITE : ((DWORD)round(waitTimeout*1000.0));
+#if !defined(WINAPI_FAMILY) || WINAPI_FAMILY!=WINAPI_FAMILY_PHONE_APP
 			WaitForSingleObject(event, actualWaitTimeout);
+#else
+			WaitForSingleObjectEx(event, actualWaitTimeout, false);
+#endif
 			// we don't really care if a context switch happens here and anything gets added to the queue by another thread
 			// since any new no-delay messages will get delivered on this iteration anyway
 			queueMutex.Lock();
@@ -77,6 +86,10 @@ void MessageThread::Run(void* arg){
 				pthread_cond_wait(&cond, queueMutex.NativeHandle());
 			}
 #endif
+		}
+		if(!running){
+			queueMutex.Unlock();
+			return;
 		}
 		currentTime=VoIPController::GetCurrentTime();
 		std::vector<Message> msgsToDeliverNow;

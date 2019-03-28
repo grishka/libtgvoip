@@ -14,6 +14,7 @@
 #include "Buffers.h"
 #include "EchoCanceller.h"
 #include "JitterBuffer.h"
+#include "utils.h"
 #include <stdio.h>
 #include <vector>
 #include <memory>
@@ -23,6 +24,7 @@ struct OpusDecoder;
 namespace tgvoip{
 class OpusDecoder {
 public:
+	TGVOIP_DISALLOW_COPY_AND_ASSIGN(OpusDecoder);
 	virtual void Start();
 
 	virtual void Stop();
@@ -37,13 +39,13 @@ public:
 	void SetJitterBuffer(std::shared_ptr<JitterBuffer> jitterBuffer);
 	void SetDTX(bool enable);
 	void SetLevelMeter(AudioLevelMeter* levelMeter);
-	void AddAudioEffect(AudioEffect* effect);
-	void RemoveAudioEffect(AudioEffect* effect);
+	void AddAudioEffect(effects::AudioEffect* effect);
+	void RemoveAudioEffect(effects::AudioEffect* effect);
 
 private:
 	void Initialize(bool isAsync, bool needEC);
 	static size_t Callback(unsigned char* data, size_t len, void* param);
-	void RunThread(void* param);
+	void RunThread();
 	int DecodeNextFrame();
 	::OpusDecoder* dec;
 	::OpusDecoder* ecDec;
@@ -63,7 +65,7 @@ private:
 	int consecutiveLostPackets;
 	bool enableDTX;
 	size_t silentPacketCount;
-	std::vector<AudioEffect*> postProcEffects;
+	std::vector<effects::AudioEffect*> postProcEffects;
 	bool async;
 	unsigned char nextBuffer[8192];
 	unsigned char decodeBuffer[8192];
