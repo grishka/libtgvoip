@@ -47,6 +47,12 @@ AM_CONDITIONAL(TARGET_OS_OSX, test "x$os_osx" == xyes)
 AC_ARG_ENABLE([audio-callback], [AS_HELP_STRING([--enable-audio-callback], [enable callback-based audio I/O])], [], [enable_audio_callback=no])
 AM_CONDITIONAL(ENABLE_AUDIO_CALLBACK, test "x$enable_audio_callback" == xyes)
 
+AC_ARG_ENABLE([desktop-dsp], [AS_HELP_STRING([--enable-desktop-dsp], [enable desktop DSP])], [], [enable_desktop_dsp=no])
+AM_CONDITIONAL(ENABLE_DESKTOP_DSP, test "x$enable_desktop_dsp" == xyes)
+
+AC_ARG_ENABLE([opus-music], [AS_HELP_STRING([--enable-opus-music], [enable music preset in OPUS encoder])], [], [enable_opus_music=no])
+AM_CONDITIONAL(ENABLE_OPUS_MUSIC, test "x$enable_opus_music" == xyes)
+
 AS_IF([test "x$os_osx" != xyes && test "x$enable_audio_callback" != xyes], [ # Linux
 	AC_CHECK_LIB([dl], [dlopen])
 

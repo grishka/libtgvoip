@@ -36,11 +36,16 @@ namespace{
 tgvoip::OpusEncoder::OpusEncoder(MediaStreamItf *source, bool needSecondary):queue(11), bufferPool(960*2, 10){
 	this->source=source;
 	source->SetCallback(tgvoip::OpusEncoder::Callback, this);
+#ifdef TGVOIP_USE_OPUS_MUSIC
 	enc=opus_encoder_create(48000, 1, OPUS_APPLICATION_AUDIO, NULL);
+	opus_encoder_ctl(enc, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
+#else
+	enc=opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, NULL);
+	opus_encoder_ctl(enc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+#endif
 	opus_encoder_ctl(enc, OPUS_SET_COMPLEXITY(10));
 	opus_encoder_ctl(enc, OPUS_SET_PACKET_LOSS_PERC(1));
 	opus_encoder_ctl(enc, OPUS_SET_INBAND_FEC(1));
-	opus_encoder_ctl(enc, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
 	opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_FULLBAND));
 	requestedBitrate=20000;
 	currentBitrate=0;
@@ -56,9 +61,14 @@ tgvoip::OpusEncoder::OpusEncoder(MediaStreamItf *source, bool needSecondary):que
 	secondaryEncoderEnabled=false;
 
 	if(needSecondary){
+#ifdef TGVOIP_USE_OPUS_MUSIC
 		secondaryEncoder=opus_encoder_create(48000, 1, OPUS_APPLICATION_AUDIO, NULL);
-		opus_encoder_ctl(secondaryEncoder, OPUS_SET_COMPLEXITY(10));
 		opus_encoder_ctl(secondaryEncoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
+#else
+		secondaryEncoder=opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, NULL);
+		opus_encoder_ctl(secondaryEncoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+#endif
+		opus_encoder_ctl(secondaryEncoder, OPUS_SET_COMPLEXITY(10));
 		//opus_encoder_ctl(secondaryEncoder, OPUS_SET_VBR(0));
 		opus_encoder_ctl(secondaryEncoder, OPUS_SET_BITRATE(8000));
 		opus_encoder_ctl(secondaryEncoder, OPUS_SET_BANDWIDTH(secondaryEnabledBandwidth));
