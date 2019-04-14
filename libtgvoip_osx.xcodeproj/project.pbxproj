@@ -307,6 +307,10 @@
 		692AB9211E675F7000706ACC /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 692AB91E1E675F7000706ACC /* CoreAudio.framework */; };
 		694DE8A1219F2265009C09A7 /* VideoRenderer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 694DE89D219F2265009C09A7 /* VideoRenderer.cpp */; };
 		694DE8A2219F2265009C09A7 /* VideoSource.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 694DE89E219F2265009C09A7 /* VideoSource.cpp */; };
+		6970AF4E225FFEBE00F02034 /* VideoFEC.h in Headers */ = {isa = PBXBuildFile; fileRef = 6970AF4A225FFEBE00F02034 /* VideoFEC.h */; };
+		6970AF4F225FFEBE00F02034 /* VideoPacketSender.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6970AF4B225FFEBE00F02034 /* VideoPacketSender.cpp */; };
+		6970AF50225FFEBE00F02034 /* VideoFEC.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6970AF4C225FFEBE00F02034 /* VideoFEC.cpp */; };
+		6970AF51225FFEBE00F02034 /* VideoPacketSender.h in Headers */ = {isa = PBXBuildFile; fileRef = 6970AF4D225FFEBE00F02034 /* VideoPacketSender.h */; };
 		6971220F20C8107F00971C2C /* PacketReassembler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6971220D20C8107E00971C2C /* PacketReassembler.cpp */; };
 		6976FD0320F6A7060019939E /* MessageThread.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6976FD0120F6A7050019939E /* MessageThread.cpp */; };
 		697B6FC72136DBA4004C8E54 /* libtgvoipTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 697B6FC62136DBA4004C8E54 /* libtgvoipTests.mm */; };
@@ -1041,6 +1045,10 @@
 		694DE89E219F2265009C09A7 /* VideoSource.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = VideoSource.cpp; sourceTree = "<group>"; };
 		694DE89F219F2265009C09A7 /* VideoSource.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = VideoSource.h; sourceTree = "<group>"; };
 		695B20601EBD39FF00E31757 /* DarwinSpecific.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DarwinSpecific.h; path = os/darwin/DarwinSpecific.h; sourceTree = SOURCE_ROOT; };
+		6970AF4A225FFEBE00F02034 /* VideoFEC.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = VideoFEC.h; sourceTree = "<group>"; };
+		6970AF4B225FFEBE00F02034 /* VideoPacketSender.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = VideoPacketSender.cpp; sourceTree = "<group>"; };
+		6970AF4C225FFEBE00F02034 /* VideoFEC.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = VideoFEC.cpp; sourceTree = "<group>"; };
+		6970AF4D225FFEBE00F02034 /* VideoPacketSender.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = VideoPacketSender.h; sourceTree = "<group>"; };
 		6971220D20C8107E00971C2C /* PacketReassembler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = PacketReassembler.cpp; sourceTree = SOURCE_ROOT; };
 		6971220E20C8107F00971C2C /* PacketReassembler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PacketReassembler.h; sourceTree = SOURCE_ROOT; };
 		6976FD0120F6A7050019939E /* MessageThread.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = MessageThread.cpp; sourceTree = SOURCE_ROOT; };
@@ -2363,6 +2371,10 @@
 				694DE89D219F2265009C09A7 /* VideoRenderer.cpp */,
 				694DE89E219F2265009C09A7 /* VideoSource.cpp */,
 				694DE89F219F2265009C09A7 /* VideoSource.h */,
+				6970AF4C225FFEBE00F02034 /* VideoFEC.cpp */,
+				6970AF4A225FFEBE00F02034 /* VideoFEC.h */,
+				6970AF4B225FFEBE00F02034 /* VideoPacketSender.cpp */,
+				6970AF4D225FFEBE00F02034 /* VideoPacketSender.h */,
 				69DF15612237DEBB00C1F8ED /* ScreamCongestionController.cpp */,
 				69DF15602237DEBB00C1F8ED /* ScreamCongestionController.h */,
 			);
@@ -2422,10 +2434,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				69DF15622237DEBB00C1F8ED /* ScreamCongestionController.h in Headers */,
+				6970AF51225FFEBE00F02034 /* VideoPacketSender.h in Headers */,
 				692AB9051E6759DD00706ACC /* VoIPServerConfig.h in Headers */,
 				69DF15722237DEDC00C1F8ED /* TGVVideoSource.h in Headers */,
 				69DF157E2237DFE700C1F8ED /* SampleBufferDisplayLayerRenderer.h in Headers */,
 				692AB9031E6759DD00706ACC /* VoIPController.h in Headers */,
+				6970AF4E225FFEBE00F02034 /* VideoFEC.h in Headers */,
 				69DF15772237DEDC00C1F8ED /* VideoToolboxEncoderSource.h in Headers */,
 				69DF15712237DEDC00C1F8ED /* TGVVideoRenderer.h in Headers */,
 			);
@@ -2651,6 +2665,7 @@
 				691E071421A4FD7700F838EF /* low_cut_filter.cc in Sources */,
 				691E074B21A4FD7700F838EF /* render_reverb_model.cc in Sources */,
 				691E081521A4FD7700F838EF /* event_tracer.cc in Sources */,
+				6970AF50225FFEBE00F02034 /* VideoFEC.cpp in Sources */,
 				C2A87DE41F4B6AD3002D3F73 /* AudioUnitIO.cpp in Sources */,
 				691E060D21A4FD7600F838EF /* real_fourier.cc in Sources */,
 				691E076321A4FD7700F838EF /* suppression_filter.cc in Sources */,
@@ -2831,6 +2846,7 @@
 				691E065421A4FD7600F838EF /* echo_canceller3_config.cc in Sources */,
 				691E06D421A4FD7600F838EF /* spectral_features_internal.cc in Sources */,
 				691E06DC21A4FD7600F838EF /* pitch_search_internal.cc in Sources */,
+				6970AF4F225FFEBE00F02034 /* VideoPacketSender.cpp in Sources */,
 				691E061421A4FD7600F838EF /* ring_buffer.c in Sources */,
 				691E07C221A4FD7700F838EF /* vad_circular_buffer.cc in Sources */,
 				C2A87DD81F4B6A33002D3F73 /* Resampler.cpp in Sources */,

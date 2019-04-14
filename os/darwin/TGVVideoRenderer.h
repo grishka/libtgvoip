@@ -39,5 +39,10 @@ typedef NS_ENUM(int, TGVStreamStopReason){
 - (tgvoip::video::VideoRenderer*)nativeVideoRenderer;
 
 - (void)_enqueueBuffer: (CMSampleBufferRef)buffer reset: (BOOL)reset;
+- (void)_setSizeWidth: (uint16_t)width height: (uint16_t)height;
+- (void)_setRotation: (uint16_t)rotation;
+- (void)_setStopped;
+- (void)_setPaused;
+- (void)_setResumed;
 
 @end

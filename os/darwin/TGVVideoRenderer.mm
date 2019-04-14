@@ -32,10 +32,10 @@
 }
 
 - (void)_enqueueBuffer: (CMSampleBufferRef)buffer reset: (BOOL)reset{
-	if(reset){
+	/*if(reset){
 		LOGV("Resetting layer");
 		[layer flush];
-	}
+	}*/
 	LOGV("Enqueue buffer");
     [layer enqueueSampleBuffer:buffer];
     NSError* error=[layer error];
@@ -44,4 +44,38 @@
     }
 }
 
+- (void)_setSizeWidth: (uint16_t)width height: (uint16_t)height{
+	dispatch_async(dispatch_get_main_queue(), ^{
+		LOGI("Callback: setSize %u %u", width, height);
+		[delegate incomingVideoStreamWillStartWithFrameSize:CGSizeMake(width, height)];
+	});
+}
+
+- (void)_setRotation: (uint16_t)rotation{
+	dispatch_async(dispatch_get_main_queue(), ^{
+		LOGI("Callback: setRotation %u", rotation);
+		[delegate incomingVideoRotationDidChange:(int)rotation];
+	});
+}
+
+- (void)_setStopped{
+	dispatch_async(dispatch_get_main_queue(), ^{
+		LOGI("Callback: setStopped");
+		[delegate incomingVideoStreamDidStopWithReason:TGVStreamStopReasonUser];
+	});
+}
+
+- (void)_setPaused{
+	dispatch_async(dispatch_get_main_queue(), ^{
+		LOGI("Callback: setPaused");
+		[delegate incomingVideoStreamDidPauseWithReason:TGVStreamPauseReasonBackground];
+	});
+}
+
+- (void)_setResumed{
+	dispatch_async(dispatch_get_main_queue(), ^{
+		LOGI("Callback: setResumed");
+		[delegate incomingVideoStreamWillResume];
+	});
+}
 @end

@@ -42,7 +42,7 @@ public:
 
 private:
 	struct jitter_packet_t{
-		unsigned char* buffer=NULL;
+        Buffer buffer=Buffer();
 		size_t size;
 		uint32_t timestamp;
 		bool isEC;
@@ -54,7 +54,7 @@ private:
 	int GetInternal(jitter_packet_t* pkt, int offset, bool advance);
 	void Advance();
 
-	BufferPool bufferPool;
+	BufferPool<JITTER_SLOT_SIZE, JITTER_SLOT_COUNT> bufferPool;
 	Mutex mutex;
 	jitter_packet_t slots[JITTER_SLOT_COUNT];
 	int64_t nextTimestamp=0;

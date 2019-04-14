@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <stdint.h>
 #include "../Buffers.h"
 
 namespace tgvoip{
@@ -18,7 +19,12 @@ namespace tgvoip{
 			virtual ~VideoSource(){};
 			static std::shared_ptr<VideoSource> Create();
 			static std::vector<uint32_t> GetAvailableEncoders();
-			void SetCallback(std::function<void(const Buffer& buffer, uint32_t flags)> callback);
+			void SetCallback(std::function<void(const Buffer& buffer, uint32_t flags, uint32_t rotation)> callback){
+				this->callback=callback;
+			};
+			void SetStreamStateCallback(std::function<void(bool)> callback){
+				streamStateCallback=callback;
+			}
 			virtual void Start()=0;
 			virtual void Stop()=0;
 			virtual void Reset(uint32_t codec, int maxResolution)=0;
@@ -35,13 +41,18 @@ namespace tgvoip{
 			unsigned int GetFrameHeight(){
 				return height;
 			}
+			void SetRotation(unsigned int rotation){
+				this->rotation=rotation;
+			}
 
 		protected:
-			std::function<void(const Buffer &, uint32_t)> callback;
+			std::function<void(const Buffer &, uint32_t, uint32_t)> callback;
+			std::function<void(bool)> streamStateCallback;
 			bool failed;
 			std::string error;
 			unsigned int width=0;
 			unsigned int height=0;
+			unsigned int rotation=0;
 			std::vector<Buffer> csd;
 		};
 	}

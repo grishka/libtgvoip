@@ -28,24 +28,24 @@ class NetworkSocketWinsock : public NetworkSocket{
 public:
 	NetworkSocketWinsock(NetworkProtocol protocol);
 	virtual ~NetworkSocketWinsock();
-	virtual void Send(NetworkPacket* packet);
-	virtual void Receive(NetworkPacket* packet);
-	virtual void Open();
-	virtual void Close();
-	virtual std::string GetLocalInterfaceInfo(IPv4Address* v4addr, IPv6Address* v6addr);
-	virtual void OnActiveInterfaceChanged();
-	virtual uint16_t GetLocalPort();
-	virtual void Connect(const NetworkAddress* address, uint16_t port);
+	virtual void Send(NetworkPacket packet) override;
+	virtual NetworkPacket Receive(size_t maxLen) override;
+	virtual void Open() override;
+	virtual void Close() override;
+	virtual std::string GetLocalInterfaceInfo(NetworkAddress* v4addr, NetworkAddress* v6addr) override;
+	virtual void OnActiveInterfaceChanged() override;
+	virtual uint16_t GetLocalPort() override;
+	virtual void Connect(const NetworkAddress address, uint16_t port) override;
 
 	static std::string V4AddressToString(uint32_t address);
 	static std::string V6AddressToString(const unsigned char address[16]);
 	static uint32_t StringToV4Address(std::string address);
 	static void StringToV6Address(std::string address, unsigned char* out);
-	static IPv4Address* ResolveDomainName(std::string name);
+	static NetworkAddress ResolveDomainName(std::string name);
 	static bool Select(std::vector<NetworkSocket*>& readFds, std::vector<NetworkSocket*>& writeFds, std::vector<NetworkSocket*>& errorFds, SocketSelectCanceller* canceller);
-	virtual NetworkAddress *GetConnectedAddress();
-	virtual uint16_t GetConnectedPort();
-	virtual void SetTimeouts(int sendTimeout, int recvTimeout);
+	virtual NetworkAddress GetConnectedAddress() override;
+	virtual uint16_t GetConnectedPort() override;
+	virtual void SetTimeouts(int sendTimeout, int recvTimeout) override;
 	virtual bool OnReadyToSend() override;
 
 protected:
@@ -58,13 +58,12 @@ private:
 	bool nat64Present;
 	double switchToV6at;
 	bool isV4Available;
-	IPv4Address lastRecvdV4;
-	IPv6Address lastRecvdV6;
 	bool isAtLeastVista;
 	bool closing;
-	NetworkAddress* tcpConnectedAddress;
+	NetworkAddress tcpConnectedAddress=NetworkAddress::Empty();
 	uint16_t tcpConnectedPort;
-	Buffer* pendingOutgoingPacket=NULL;
+	NetworkPacket pendingOutgoingPacket=NetworkPacket::Empty();
+	Buffer recvBuf=Buffer(2048);
 };
 
 }

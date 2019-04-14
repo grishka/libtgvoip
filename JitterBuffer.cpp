@@ -12,7 +12,7 @@
 
 using namespace tgvoip;
 
-JitterBuffer::JitterBuffer(MediaStreamItf *out, uint32_t step):bufferPool(JITTER_SLOT_SIZE, JITTER_SLOT_COUNT){
+JitterBuffer::JitterBuffer(MediaStreamItf *out, uint32_t step){
 	if(out)
 		out->SetCallback(JitterBuffer::CallbackOut, this);
 	this->step=step;
@@ -74,7 +74,7 @@ void JitterBuffer::HandleInput(unsigned char *data, size_t len, uint32_t timesta
 	MutexGuard m(mutex);
 	jitter_packet_t pkt;
 	pkt.size=len;
-	pkt.buffer=data;
+	pkt.buffer=Buffer::Wrap(data, len, [](void*){}, [](void* a, size_t)->void*{return a;});
 	pkt.timestamp=timestamp;
 	pkt.isEC=isEC;
 	PutInternal(&pkt, !isEC);
@@ -88,9 +88,8 @@ void JitterBuffer::Reset(){
 	lastPutTimestamp=0;
 	int i;
 	for(i=0;i<JITTER_SLOT_COUNT;i++){
-		if(slots[i].buffer){
-			bufferPool.Reuse(slots[i].buffer);
-			slots[i].buffer=NULL;
+		if(!slots[i].buffer.IsEmpty()){
+			slots[i].buffer=Buffer();
 		}
 	}
 	delayHistory.Reset();
@@ -107,7 +106,7 @@ void JitterBuffer::Reset(){
 
 size_t JitterBuffer::HandleOutput(unsigned char *buffer, size_t len, int offsetInSteps, bool advance, int& playbackScaledDuration, bool& isEC){
 	jitter_packet_t pkt;
-	pkt.buffer=buffer;
+	pkt.buffer=Buffer::Wrap(buffer, len, [](void*){}, [](void* a, size_t)->void*{return a;});
 	pkt.size=len;
 	MutexGuard m(mutex);
 	if(first){
@@ -118,9 +117,8 @@ size_t JitterBuffer::HandleOutput(unsigned char *buffer, size_t len, int offsetI
 			while(delay>GetMinPacketCount()){
 				for(int i=0;i<JITTER_SLOT_COUNT;i++){
 					if(slots[i].timestamp==nextTimestamp){
-						if(slots[i].buffer){
-    						bufferPool.Reuse(slots[i].buffer);
-    						slots[i].buffer=NULL;
+						if(!slots[i].buffer.IsEmpty()){
+    						slots[i].buffer=Buffer();
 						}
 						break;
 					}
@@ -168,7 +166,7 @@ int JitterBuffer::GetInternal(jitter_packet_t* pkt, int offset, bool advance){
 
 	int i;
 	for(i=0;i<JITTER_SLOT_COUNT;i++){
-		if(slots[i].buffer!=NULL && slots[i].timestamp==timestampToGet){
+		if(!slots[i].buffer.IsEmpty() && slots[i].timestamp==timestampToGet){
 			break;
 		}
 	}
@@ -180,12 +178,11 @@ int JitterBuffer::GetInternal(jitter_packet_t* pkt, int offset, bool advance){
 			if(pkt) {
 				pkt->size = slots[i].size;
 				pkt->timestamp = slots[i].timestamp;
-				memcpy(pkt->buffer, slots[i].buffer, slots[i].size);
+				pkt->buffer.CopyFrom(slots[i].buffer, slots[i].size);
 				pkt->isEC=slots[i].isEC;
 			}
 		}
-		bufferPool.Reuse(slots[i].buffer);
-		slots[i].buffer=NULL;
+		slots[i].buffer=Buffer();
 		if(offset==0)
 			Advance();
 		lostCount=0;
@@ -228,10 +225,10 @@ void JitterBuffer::PutInternal(jitter_packet_t* pkt, bool overwriteExisting){
 
 	int i;
 	for(i=0;i<JITTER_SLOT_COUNT;i++){
-		if(slots[i].buffer && slots[i].timestamp==pkt->timestamp){
+		if(!slots[i].buffer.IsEmpty() && slots[i].timestamp==pkt->timestamp){
 			//LOGV("Found existing packet for timestamp %u, overwrite %d", pkt->timestamp, overwriteExisting);
 			if(overwriteExisting){
-				memcpy(slots[i].buffer, pkt->buffer, pkt->size);
+				slots[i].buffer.CopyFrom(pkt->buffer, pkt->size);
 				slots[i].size=pkt->size;
 				slots[i].isEC=pkt->isEC;
 			}
@@ -248,10 +245,9 @@ void JitterBuffer::PutInternal(jitter_packet_t* pkt, bool overwriteExisting){
 	}
 	
 	for(i=0;i<JITTER_SLOT_COUNT;i++){
-		if(slots[i].buffer!=NULL){
+		if(!slots[i].buffer.IsEmpty()){
 			if(slots[i].timestamp<nextTimestamp-1){
-				bufferPool.Reuse(slots[i].buffer);
-				slots[i].buffer=NULL;
+				slots[i].buffer=Buffer();
 			}
 		}
 	}
@@ -288,21 +284,20 @@ void JitterBuffer::PutInternal(jitter_packet_t* pkt, bool overwriteExisting){
 		lastPutTimestamp=pkt->timestamp;
 
 	for(i=0;i<JITTER_SLOT_COUNT;i++){
-		if(slots[i].buffer==NULL)
+		if(slots[i].buffer.IsEmpty())
 			break;
 	}
 	if(i==JITTER_SLOT_COUNT || GetCurrentDelay()>=maxUsedSlots){
 		int toRemove=JITTER_SLOT_COUNT;
 		uint32_t bestTimestamp=0xFFFFFFFF;
 		for(i=0;i<JITTER_SLOT_COUNT;i++){
-			if(slots[i].buffer!=NULL && slots[i].timestamp<bestTimestamp){
+			if(!slots[i].buffer.IsEmpty() && slots[i].timestamp<bestTimestamp){
 				toRemove=i;
 				bestTimestamp=slots[i].timestamp;
 			}
 		}
 		Advance();
-		bufferPool.Reuse(slots[toRemove].buffer);
-		slots[toRemove].buffer=NULL;
+		slots[toRemove].buffer=Buffer();
 		i=toRemove;
 	}
 	slots[i].timestamp=pkt->timestamp;
@@ -310,10 +305,7 @@ void JitterBuffer::PutInternal(jitter_packet_t* pkt, bool overwriteExisting){
 	slots[i].buffer=bufferPool.Get();
 	slots[i].recvTimeDiff=time-prevRecvTime;
 	slots[i].isEC=pkt->isEC;
-	if(slots[i].buffer)
-		memcpy(slots[i].buffer, pkt->buffer, pkt->size);
-	else
-		LOGE("WTF!!");
+	slots[i].buffer.CopyFrom(pkt->buffer, pkt->size);
 #ifdef TGVOIP_DUMP_JITTER_STATS
 	fprintf(dump, "%u\t%.03f\t%d\t%.03f\t%.03f\t%.03f\n", pkt->timestamp, time, GetCurrentDelay(), lastMeasuredJitter, lastMeasuredDelay, minDelay);
 #endif
@@ -330,7 +322,7 @@ unsigned int JitterBuffer::GetCurrentDelay(){
 	unsigned int delay=0;
 	int i;
 	for(i=0;i<JITTER_SLOT_COUNT;i++){
-		if(slots[i].buffer!=NULL)
+		if(!slots[i].buffer.IsEmpty())
 			delay++;
 	}
 	return delay;

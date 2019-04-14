@@ -20,6 +20,7 @@
 #include "../../audio/Resampler.h"
 #include "../../os/android/JNIUtilities.h"
 #include "../../PrivateDefines.h"
+#include "../../logging.h"
 
 #ifdef TGVOIP_HAS_CONFIG
 #include <tgvoip_config.h>
@@ -160,7 +161,8 @@ namespace tgvoip {
 				fclose(f);
 			}
 		}
-		/*if(video::VideoRendererAndroid::availableDecoders.empty() || video::VideoSourceAndroid::availableEncoders.empty()){
+#ifndef TGVOIP_NO_VIDEO
+		if(video::VideoRendererAndroid::availableDecoders.empty() || video::VideoSourceAndroid::availableEncoders.empty()){
 			video::VideoRendererAndroid::availableDecoders.clear();
 			video::VideoSourceAndroid::availableEncoders.clear();
 			jmethodID getCodecsMethod=env->GetStaticMethodID(jniUtilitiesClass, "getSupportedVideoCodecs", "()[[Ljava/lang/String;");
@@ -181,7 +183,8 @@ namespace tgvoip {
 			}
 			jmethodID getMaxResolutionMethod=env->GetStaticMethodID(jniUtilitiesClass, "getMaxVideoResolution", "()I");
 			video::VideoRendererAndroid::maxResolution=env->CallStaticIntMethod(jniUtilitiesClass, getMaxResolutionMethod);
-		}*/
+		}
+#endif
 		return (jlong)(intptr_t)cntrlr;
 	}
 
@@ -216,8 +219,7 @@ namespace tgvoip {
 		jfieldID portFld=env->GetFieldID(epClass, "port", "I");
 		jfieldID peerTagFld=env->GetFieldID(epClass, TGVOIP_PEER_TAG_VARIABLE_NAME, "[B");
 		jfieldID idFld=env->GetFieldID(epClass, "id", "J");
-		int i;
-		for(i=0;i<len;i++){
+		for(unsigned int i=0;i<len;i++){
 			jobject endpoint=env->GetObjectArrayElement(endpoints, i);
 			jstring ip=(jstring) env->GetObjectField(endpoint, ipFld);
 			jstring ipv6=(jstring) env->GetObjectField(endpoint, ipv6Fld);
@@ -293,6 +295,10 @@ namespace tgvoip {
 		if(statsDumpPath){
 			cfg.statsDumpFilePath=jni::JavaStringToStdString(env, statsDumpPath);
 		}
+
+#ifndef TGVOIP_NO_VIDEO
+		cfg.enableVideoReceive=cfg.enableVideoSend=true;
+#endif
 
 		((VoIPController*)(intptr_t)inst)->SetConfig(cfg);
 	}
@@ -429,12 +435,12 @@ namespace tgvoip {
 
 		const char* ipChars=env->GetStringUTFChars(reflectorAddress, NULL);
 		std::string ipLiteral(ipChars);
-		IPv4Address v4addr(ipLiteral);
-		IPv6Address v6addr("::0");
+		NetworkAddress v4addr=NetworkAddress::IPv4(ipLiteral);
+		NetworkAddress v6addr=NetworkAddress::Empty();
 		env->ReleaseStringUTFChars(reflectorAddress, ipChars);
 		if(reflectorAddressV6 && env->GetStringLength(reflectorAddressV6)){
 			const char* ipv6Chars=env->GetStringUTFChars(reflectorAddressV6, NULL);
-			v6addr=IPv6Address(ipv6Chars);
+			v6addr=NetworkAddress::IPv6(ipv6Chars);
 			env->ReleaseStringUTFChars(reflectorAddressV6, ipv6Chars);
 		}
 		ctlr->SetGroupCallInfo((unsigned char *) encryptionKey, (unsigned char *) reflectorGroupTag, (unsigned char *) reflectorSelfTag, (unsigned char *) reflectorSelfSecret, (unsigned char*) reflectorSelfTagHash, selfUserID, v4addr, v6addr, (uint16_t)reflectorPort);
@@ -516,16 +522,46 @@ namespace tgvoip {
 	}
 
 	void VideoSource_nativeSendFrame(JNIEnv* env, jobject thiz, jlong inst, jobject buffer, jint offset, jint length, jint flags){
-		size_t bufsize=(size_t)env->GetDirectBufferCapacity(buffer);
+		//size_t bufsize=(size_t)env->GetDirectBufferCapacity(buffer);
 		Buffer buf(static_cast<size_t>(length));
 		buf.CopyFrom(((char*)env->GetDirectBufferAddress(buffer))+offset, 0, static_cast<size_t>(length));
 		((video::VideoSourceAndroid*)(intptr_t)inst)->SendFrame(std::move(buf), static_cast<uint32_t>(flags));
+	}
+
+	void VideoSource_nativeSetRotation(JNIEnv* env, jobject thiz, jlong inst, jint rotation){
+		((video::VideoSourceAndroid*)(intptr_t)inst)->SetRotation((unsigned int)rotation);
 	}
 
 #pragma mark - VideoRenderer
 
 	jlong VideoRenderer_nativeInit(JNIEnv* env, jobject thiz){
 		return (jlong)(intptr_t)new video::VideoRendererAndroid(env->NewGlobalRef(thiz));
+	}
+
+#pragma mark - VLog
+
+	template<int level> void VLog_log(JNIEnv* env, jclass cls, jstring jmsg){
+		const char* format="[java] %s";
+		std::string msg=jni::JavaStringToStdString(env, jmsg);
+		switch(level){
+			case 0:
+				LOGV(format, msg.c_str());
+				break;
+			case 1:
+				LOGD(format, msg.c_str());
+				break;
+			case 2:
+				LOGI(format, msg.c_str());
+				break;
+			case 3:
+				LOGW(format, msg.c_str());
+				break;
+			case 4:
+				LOGE(format, msg.c_str());
+				break;
+			default:
+				break;
+		}
 	}
 }
 
@@ -546,6 +582,10 @@ extern "C" void tgvoipRegisterNatives(JNIEnv* env){
 	jclass videoRenderer=env->FindClass(TGVOIP_PACKAGE_PATH "/VideoRenderer");
 	if(env->ExceptionCheck()){
 		env->ExceptionClear(); // is returning NULL from FindClass not enough?
+	}
+	jclass vlog=env->FindClass(TGVOIP_PACKAGE_PATH "/VLog");
+	if(env->ExceptionCheck()){
+		env->ExceptionClear();
 	}
 	assert(controller && audioRecordJNI && audioTrackJNI && serverConfig && resampler);
 
@@ -573,6 +613,7 @@ extern "C" void tgvoipRegisterNatives(JNIEnv* env){
 			video::VideoRendererAndroid::decodeAndDisplayMethod=env->GetMethodID(videoRenderer, "decodeAndDisplay", "(Ljava/nio/ByteBuffer;IJ)V");
 			video::VideoRendererAndroid::resetMethod=env->GetMethodID(videoRenderer, "reset", "(Ljava/lang/String;II[[B)V");
 			video::VideoRendererAndroid::setStreamEnabledMethod=env->GetMethodID(videoRenderer, "setStreamEnabled", "(Z)V");
+			video::VideoRendererAndroid::setRotationMethod=env->GetMethodID(videoRenderer, "setRotation", "(I)V");
 		}
 	}
 
@@ -611,9 +652,11 @@ extern "C" void tgvoipRegisterNatives(JNIEnv* env){
 			{"nativeSendGroupCallKey", "(J[B)V", (void*)&tgvoip::VoIPController_nativeSendGroupCallKey},
 			{"nativeRequestCallUpgrade", "(J)V", (void*)&tgvoip::VoIPController_nativeRequestCallUpgrade},
 			{"nativeNeedRate", "(J)Z", (void*)&tgvoip::VoIPController_nativeNeedRate},
-			{"getConnectionMaxLayer", "()I", (void*)&tgvoip::VoIPController_getConnectionMaxLayer},
-			//{"nativeSetVideoSource", "(JJ)V", (void*)&tgvoip::VoIPController_nativeSetVideoSource},
-			//{"nativeSetVideoRenderer", "(JJ)V", (void*)&tgvoip::VoIPController_nativeSetVideoRenderer}
+			{"getConnectionMaxLayer", "()I", (void*)&tgvoip::VoIPController_getConnectionMaxLayer}
+#ifndef TGVOIP_NO_VIDEO
+			,{"nativeSetVideoSource", "(JJ)V", (void*)&tgvoip::VoIPController_nativeSetVideoSource},
+			{"nativeSetVideoRenderer", "(JJ)V", (void*)&tgvoip::VoIPController_nativeSetVideoRenderer}
+#endif
 	};
 	env->RegisterNatives(controller, controllerMethods, sizeof(controllerMethods)/sizeof(JNINativeMethod));
 
@@ -666,10 +709,11 @@ extern "C" void tgvoipRegisterNatives(JNIEnv* env){
 	if(videoSource){
 		// VideoSource
 		JNINativeMethod videoSourceMethods[]={
-				{"nativeInit",                     "()J",                          (void *) &tgvoip::VideoSource_nativeInit},
-				{"nativeRelease",                  "(J)V",                         (void *) &tgvoip::VideoSource_nativeRelease},
+				{"nativeInit", "()J", (void *) &tgvoip::VideoSource_nativeInit},
+				{"nativeRelease", "(J)V", (void *) &tgvoip::VideoSource_nativeRelease},
 				{"nativeSetVideoStreamParameters", "(J[Ljava/nio/ByteBuffer;II)V", (void *) &tgvoip::VideoSource_nativeSetVideoStreamParameters},
-				{"nativeSendFrame",                "(JLjava/nio/ByteBuffer;III)V", (void *) &tgvoip::VideoSource_nativeSendFrame}
+				{"nativeSendFrame", "(JLjava/nio/ByteBuffer;III)V", (void *) &tgvoip::VideoSource_nativeSendFrame},
+				{"nativeSetRotation", "(JI)V", (void*)&tgvoip::VideoSource_nativeSetRotation}
 		};
 		env->RegisterNatives(videoSource, videoSourceMethods, sizeof(videoSourceMethods)/sizeof(JNINativeMethod));
 	}
@@ -680,5 +724,17 @@ extern "C" void tgvoipRegisterNatives(JNIEnv* env){
 				{"nativeInit", "()J", (void *) &tgvoip::VideoRenderer_nativeInit}
 		};
 		env->RegisterNatives(videoRenderer, videoRendererMethods, sizeof(videoRendererMethods)/sizeof(JNINativeMethod));
+	}
+
+	if(vlog){
+		// VLog
+		JNINativeMethod vlogMethods[]={
+				{"v", "(Ljava/lang/String;)V", (void *) &tgvoip::VLog_log<0>},
+				{"d", "(Ljava/lang/String;)V", (void *) &tgvoip::VLog_log<1>},
+				{"i", "(Ljava/lang/String;)V", (void *) &tgvoip::VLog_log<2>},
+				{"w", "(Ljava/lang/String;)V", (void *) &tgvoip::VLog_log<3>},
+				{"e", "(Ljava/lang/String;)V", (void *) &tgvoip::VLog_log<4>}
+		};
+		env->RegisterNatives(vlog, vlogMethods, sizeof(vlogMethods)/sizeof(JNINativeMethod));
 	}
 }

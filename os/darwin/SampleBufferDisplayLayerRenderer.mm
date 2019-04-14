@@ -72,26 +72,38 @@ void SampleBufferDisplayLayerRenderer::Reset(uint32_t codec, unsigned int width,
 			}
     		CGRect rect=CMVideoFormatDescriptionGetCleanAperture(formatDesc, true);
     		LOGI("size from formatDesc: %f x %f", rect.size.width, rect.size.height);
+			
 		}else{
 			LOGE("HEVC not available on this OS");
 		}
 	}
+	[renderer _setSizeWidth:(uint16_t)width height:(uint16_t)height];
 	needReset=true;
 }
 
 void SampleBufferDisplayLayerRenderer::DecodeAndDisplay(Buffer frame, uint32_t pts){
+
+	std::vector<uint32_t> nalStartOffsets;
+	uint8_t* _data=*frame;
+	for(uint32_t offset=0;offset<frame.Length()-4;offset++){
+		if(_data[offset]==0 && _data[offset+1]==0 && ((_data[offset+2]==0 && _data[offset+3]==1) || _data[offset+2]==1)){
+			nalStartOffsets.push_back(offset+(_data[offset+2]==1 ? 3 : 4));
+			offset+=4;
+		}
+	}
+	BufferOutputStream out(frame.Length());
+	for(uint32_t i=0;i<nalStartOffsets.size();i++){
+		uint32_t length=(i==nalStartOffsets.size()-1 ? (uint32_t)frame.Length() : nalStartOffsets[i+1])-nalStartOffsets[i];
+    	uint8_t lenBytes[]={(uint8_t)(length >> 24), (uint8_t)(length >> 16), (uint8_t)(length >> 8), (uint8_t)length};
+    	out.WriteBytes(lenBytes, 4);
+    	out.WriteBytes(frame, nalStartOffsets[i], length);
+	}
+
 	CMBlockBufferRef blockBuffer;
 
-	OSStatus status=CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, *frame, frame.Length(), kCFAllocatorNull, NULL, 0, frame.Length(), 0, &blockBuffer);
+	OSStatus status=CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, out.GetBuffer(), out.GetLength(), kCFAllocatorNull, NULL, 0, out.GetLength(), 0, &blockBuffer);
 	if(status!=noErr){
 		LOGE("CMBlockBufferCreateWithMemoryBlock failed: %d", status);
-		return;
-	}
-	uint32_t _len=(uint32_t)(frame.Length()-4);
-	uint8_t lenBytes[]={(uint8_t)(_len >> 24), (uint8_t)(_len >> 16), (uint8_t)(_len >> 8), (uint8_t)_len};
-	status=CMBlockBufferReplaceDataBytes(lenBytes, blockBuffer, 0, 4);
-	if(status!=noErr){
-		LOGE("CMBlockBufferReplaceDataBytes failed: %d", status);
 		return;
 	}
 	CMSampleBufferRef sampleBuffer;
@@ -105,14 +117,21 @@ void SampleBufferDisplayLayerRenderer::DecodeAndDisplay(Buffer frame, uint32_t p
 	CFArrayRef attachments=CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, true);
 	CFMutableDictionaryRef dict=(CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0);
 	CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
-	
+
 	[renderer _enqueueBuffer:sampleBuffer reset:needReset];
 	needReset=false;
 	CFRelease(sampleBuffer);
 }
 
 void SampleBufferDisplayLayerRenderer::SetStreamEnabled(bool enabled){
-
+	if(enabled!=streamEnabled){
+		streamEnabled=enabled;
+		if(enabled){
+			[renderer _setResumed];
+		}else{
+			[renderer _setStopped];
+		}
+	}
 }
 
 int SampleBufferDisplayLayerRenderer::GetMaximumResolution(){
@@ -130,6 +149,18 @@ int SampleBufferDisplayLayerRenderer::GetMaximumResolution(){
 	// TODO support OS X
 #endif
 	return INIT_VIDEO_RES_1080;
+}
+
+void SampleBufferDisplayLayerRenderer::SetRotation(uint16_t rotation){
+	[renderer _setRotation:rotation];
+}
+
+void SampleBufferDisplayLayerRenderer::SetStreamPaused(bool paused){
+	if(paused){
+		[renderer _setPaused];
+	}else if(streamEnabled){
+		[renderer _setResumed];
+	}
 }
 
 std::vector<uint32_t> SampleBufferDisplayLayerRenderer::GetAvailableDecoders(){

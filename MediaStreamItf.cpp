@@ -25,7 +25,7 @@ size_t MediaStreamItf::InvokeCallback(unsigned char *data, size_t length){
 	return 0;
 }
 
-AudioMixer::AudioMixer() : bufferPool(960*2, 16), processedQueue(16), semaphore(16, 0){
+AudioMixer::AudioMixer() : processedQueue(16), semaphore(16, 0){
 	running=false;
 }
 
@@ -63,9 +63,8 @@ void AudioMixer::DoCallback(unsigned char *data, size_t length){
 		semaphore.Release(2);
 	else
 		semaphore.Release();
-	unsigned char* buf=processedQueue.GetBlocking();
-	memcpy(data, buf, 960*2);
-	bufferPool.Reuse(buf);
+	Buffer buf=processedQueue.GetBlocking();
+	memcpy(data, *buf, 960*2);
 }
 
 size_t AudioMixer::OutputCallback(unsigned char *data, size_t length, void *arg){
@@ -111,51 +110,52 @@ void AudioMixer::RunThread(){
 		if(!running)
 			break;
 
-		unsigned char* data=bufferPool.Get();
-		//LOGV("Audio mixer processing a frame");
-		if(!data){
+		try{
+			Buffer data=bufferPool.Get();
+			//LOGV("Audio mixer processing a frame");
+			MutexGuard m(inputsMutex);
+			int16_t *buf=reinterpret_cast<int16_t *>(*data);
+			int16_t input[960];
+			float out[960];
+			memset(out, 0, 960*4);
+			int usedInputs=0;
+			for(std::vector<MixerInput>::iterator in=inputs.begin(); in!=inputs.end(); ++in){
+				size_t res=in->source->InvokeCallback(reinterpret_cast<unsigned char *>(input), 960*2);
+				if(!res || in->multiplier==0){
+					//LOGV("AudioMixer: skipping silent packet");
+					continue;
+				}
+				usedInputs++;
+				float k=in->multiplier;
+				if(k!=1){
+					for(size_t i=0; i<960; i++){
+						out[i]+=(float) input[i]*k;
+					}
+				}else{
+					for(size_t i=0; i<960; i++){
+						out[i]+=(float) input[i];
+					}
+				}
+			}
+			if(usedInputs>0){
+				for(size_t i=0; i<960; i++){
+					if(out[i]>32767.0f)
+						buf[i]=INT16_MAX;
+					else if(out[i]<-32768.0f)
+						buf[i]=INT16_MIN;
+					else
+						buf[i]=(int16_t) out[i];
+				}
+			}else{
+				memset(*data, 0, 960*2);
+			}
+			if(echoCanceller)
+				echoCanceller->SpeakerOutCallback(*data, 960*2);
+			processedQueue.Put(std::move(data));
+		}catch(std::bad_alloc& x){
 			LOGE("AudioMixer: no buffers left");
 			continue;
 		}
-		MutexGuard m(inputsMutex);
-		int16_t* buf=reinterpret_cast<int16_t*>(data);
-		int16_t input[960];
-		float out[960];
-		memset(out, 0, 960*4);
-		int usedInputs=0;
-		for(std::vector<MixerInput>::iterator in=inputs.begin();in!=inputs.end();++in){
-			size_t res=in->source->InvokeCallback(reinterpret_cast<unsigned char*>(input), 960*2);
-			if(!res || in->multiplier==0){
-				//LOGV("AudioMixer: skipping silent packet");
-				continue;
-			}
-			usedInputs++;
-			float k=in->multiplier;
-			if(k!=1){
-				for(size_t i=0; i<960; i++){
-					out[i]+=(float)input[i]*k;
-				}
-			}else{
-				for(size_t i=0;i<960;i++){
-					out[i]+=(float)input[i];
-				}
-			}
-		}
-		if(usedInputs>0){
-			for(size_t i=0; i<960; i++){
-				if(out[i]>32767.0f)
-					buf[i]=INT16_MAX;
-				else if(out[i]<-32768.0f)
-					buf[i]=INT16_MIN;
-				else
-					buf[i]=(int16_t)out[i];
-			}
-		}else{
-			memset(data, 0, 960*2);
-		}
-		if(echoCanceller)
-			echoCanceller->SpeakerOutCallback(data, 960*2);
-		processedQueue.Put(data);
 	}
 	LOGI("======== audio mixer thread exiting =========");
 }

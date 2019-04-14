@@ -19,7 +19,7 @@
 using namespace tgvoip;
 
 MessageThread::MessageThread() : Thread(std::bind(&MessageThread::Run, this)){
-
+	running=true;
 	SetName("MessageThread");
 
 #ifdef _WIN32

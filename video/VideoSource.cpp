@@ -21,11 +21,6 @@ std::shared_ptr<VideoSource> VideoSource::Create(){
 	return nullptr;
 }
 
-
-void VideoSource::SetCallback(std::function<void(const Buffer &, uint32_t)> callback){
-	this->callback=callback;
-}
-
 bool VideoSource::Failed(){
 	return failed;
 }

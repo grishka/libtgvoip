@@ -9,6 +9,7 @@
 #include "utils.h"
 #include <vector>
 #include <functional>
+#include <atomic>
 
 namespace tgvoip{
 	class MessageThread : public Thread{
@@ -35,7 +36,7 @@ namespace tgvoip{
 		void Run();
 		void InsertMessageInternal(Message& m);
 
-		bool running=true;
+		std::atomic<bool> running;
 		std::vector<Message> queue;
 		Mutex queueMutex;
 		uint32_t lastMessageID=1;

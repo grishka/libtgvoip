@@ -20,6 +20,8 @@
 #include "VoIPServerConfig.h"
 #include "PrivateDefines.h"
 #include "json11.hpp"
+#include "PacketSender.h"
+#include "video/VideoPacketSender.h"
 #include <assert.h>
 #include <time.h>
 #include <math.h>
@@ -29,7 +31,6 @@
 #include <sstream>
 #include <inttypes.h>
 #include <float.h>
-
 
 inline int pad4(int x){
 	int r=PAD4(x);
@@ -57,12 +58,16 @@ bool VoIPController::didInitWin32TimeScale = false;
 #ifdef __ANDROID__
 #include "os/android/JNIUtilities.h"
 #include "os/android/AudioInputAndroid.h"
+#include "NetworkSocket.h"
+
 extern jclass jniUtilitiesClass;
 #endif
 
 #if defined(TGVOIP_USE_CALLBACK_AUDIO_IO)
 #include "audio/AudioIOCallback.h"
 #endif
+
+#define ENFORCE_MSG_THREAD assert(messageThread.IsCurrent())
 
 #pragma mark - OpenSSL wrappers
 
@@ -141,7 +146,8 @@ VoIPController::VoIPController() : activeNetItfName(""),
 								   currentAudioOutput("default"),
 								   proxyAddress(""),
 								   proxyUsername(""),
-								   proxyPassword(""){
+								   proxyPassword(""),
+								   rawSendQueue(64){
 	seq=1;
 	lastRemoteSeq=0;
 	state=STATE_WAIT_INIT;
@@ -152,7 +158,6 @@ VoIPController::VoIPController() : activeNetItfName(""),
 	audioTimestampIn=0;
 	audioTimestampOut=0;
 	stopping=false;
-	memset(recvPacketTimes, 0, sizeof(double)*32);
 	memset(&stats, 0, sizeof(TrafficStats));
 	lastRemoteAckSeq=0;
 	lastSentSeq=0;
@@ -184,10 +189,9 @@ VoIPController::VoIPController() : activeNetItfName(""),
 
 	proxyProtocol=PROXY_NONE;
 	proxyPort=0;
-	resolvedProxyAddress=NULL;
 
 	selectCanceller=SocketSelectCanceller::Create();
-	udpSocket=NetworkSocket::Create(PROTO_UDP);
+	udpSocket=NetworkSocket::Create(NetworkProtocol::UDP);
 	realUdpSocket=udpSocket;
 	udpConnectivityState=UDP_UNKNOWN;
 	echoCancellationStrength=1;
@@ -209,6 +213,7 @@ VoIPController::VoIPController() : activeNetItfName(""),
 	didAddIPv6Relays=false;
 	didSendIPv6Endpoint=false;
 	unsentStreamPackets.store(0);
+	runReceiver=false;
 
 	sendThread=NULL;
 	recvThread=NULL;
@@ -233,6 +238,7 @@ VoIPController::VoIPController() : activeNetItfName(""),
 	rateMaxAcceptableSendLoss=ServerConfig::GetSharedInstance()->GetDouble("rate_min_send_loss", 0.2);
 	packetLossToEnableExtraEC=ServerConfig::GetSharedInstance()->GetDouble("packet_loss_for_extra_ec", 0.02);
 	maxUnsentStreamPackets=static_cast<uint32_t>(ServerConfig::GetSharedInstance()->GetInt("max_unsent_stream_packets", 2));
+	unackNopThreshold=static_cast<uint32_t>(ServerConfig::GetSharedInstance()->GetInt("unack_nop_threshold", 10));
 
 #ifdef __APPLE__
 	machTimestart=0;
@@ -285,8 +291,6 @@ VoIPController::~VoIPController(){
 	delete conctl;
 	if(statsDump)
 		fclose(statsDump);
-	if(resolvedProxyAddress)
-		delete resolvedProxyAddress;
 	delete selectCanceller;
 	LOGD("Left VoIPController::~VoIPController");
 	if(tgvoipLogFile){
@@ -306,9 +310,10 @@ void VoIPController::Stop(){
 	if(realUdpSocket!=udpSocket)
 		realUdpSocket->Close();
 	selectCanceller->CancelSelect();
-	Buffer emptyBuf(0);
+	//Buffer emptyBuf(0);
 	//PendingOutgoingPacket emptyPacket{0, 0, 0, move(emptyBuf), 0};
 	//sendQueue->Put(move(emptyPacket));
+	rawSendQueue.Put(RawPendingOutgoingPacket{NetworkPacket::Empty(), nullptr});
 	LOGD("before join sendThread");
 	if(sendThread){
 		sendThread->Join();
@@ -333,6 +338,11 @@ void VoIPController::Stop(){
 			audioOutput->SetCallback(NULL, NULL);
 		}
 	}
+	if(videoPacketSender){
+		LOGD("before delete video packet sender");
+		delete videoPacketSender;
+		videoPacketSender=NULL;
+	}
 	LOGD("Left VoIPController::Stop [need rate = %d]", (int)needRate);
 }
 
@@ -342,24 +352,23 @@ bool VoIPController::NeedRate(){
 
 void VoIPController::SetRemoteEndpoints(vector<Endpoint> endpoints, bool allowP2p, int32_t connectionMaxLayer){
 	LOGW("Set remote endpoints, allowP2P=%d, connectionMaxLayer=%u", allowP2p ? 1 : 0, connectionMaxLayer);
+	assert(!runReceiver);
 	preferredRelay=0;
-	{
-		MutexGuard m(endpointsMutex);
-		this->endpoints.clear();
-		didAddTcpRelays=false;
-		useTCP=true;
-		for(vector<Endpoint>::iterator itrtr=endpoints.begin();itrtr!=endpoints.end();++itrtr){
-			if(this->endpoints.find(itrtr->id)!=this->endpoints.end())
-				LOGE("Endpoint IDs are not unique!");
-			this->endpoints[itrtr->id]=*itrtr;
-			if(currentEndpoint==0)
-				currentEndpoint=itrtr->id;
-			if(itrtr->type==Endpoint::Type::TCP_RELAY)
-				didAddTcpRelays=true;
-			if(itrtr->type==Endpoint::Type::UDP_RELAY)
-				useTCP=false;
-			LOGV("Adding endpoint: %s:%d, %s", itrtr->address.ToString().c_str(), itrtr->port, itrtr->type==Endpoint::Type::UDP_RELAY ? "UDP" : "TCP");
-		}
+
+	this->endpoints.clear();
+	didAddTcpRelays=false;
+	useTCP=true;
+	for(vector<Endpoint>::iterator itrtr=endpoints.begin();itrtr!=endpoints.end();++itrtr){
+		if(this->endpoints.find(itrtr->id)!=this->endpoints.end())
+			LOGE("Endpoint IDs are not unique!");
+		this->endpoints[itrtr->id]=*itrtr;
+		if(currentEndpoint==0)
+			currentEndpoint=itrtr->id;
+		if(itrtr->type==Endpoint::Type::TCP_RELAY)
+			didAddTcpRelays=true;
+		if(itrtr->type==Endpoint::Type::UDP_RELAY)
+			useTCP=false;
+		LOGV("Adding endpoint: %s:%d, %s", itrtr->address.ToString().c_str(), itrtr->port, itrtr->type==Endpoint::Type::UDP_RELAY ? "UDP" : "TCP");
 	}
 	preferredRelay=currentEndpoint;
 	this->allowP2p=allowP2p;
@@ -377,8 +386,6 @@ void VoIPController::Start(){
 		SetState(STATE_FAILED);
 		return;
 	}
-
-	//SendPacket(NULL, 0, currentEndpoint);
 
 	runReceiver=true;
 	recvThread=new Thread(bind(&VoIPController::RunRecvThread, this));
@@ -419,7 +426,7 @@ void VoIPController::SetNetworkType(int type){
 	networkType=type;
 	UpdateDataSavingState();
 	UpdateAudioBitrateLimit();
-	myIPv6=IPv6Address();
+	myIPv6=NetworkAddress::Empty();
 	string itfName=udpSocket->GetLocalInterfaceInfo(NULL, &myIPv6);
 	LOGI("set network type: %s, active interface %s", NetworkTypeToString(type).c_str(), itfName.c_str());
 	LOGI("Local IPv6 address: %s", myIPv6.ToString().c_str());
@@ -436,74 +443,71 @@ void VoIPController::SetNetworkType(int type){
 		activeNetItfName=itfName;
 		if(isFirstChange)
 			return;
-		wasNetworkHandover=true;
-		if(currentEndpoint){
-			const Endpoint& _currentEndpoint=endpoints.at(currentEndpoint);
-			const Endpoint& _preferredRelay=endpoints.at(preferredRelay);
-			if(_currentEndpoint.type!=Endpoint::Type::UDP_RELAY){
-				if(_preferredRelay.type==Endpoint::Type::UDP_RELAY)
-					currentEndpoint=preferredRelay;
-				MutexGuard m(endpointsMutex);
-				constexpr int64_t lanID=(int64_t)(FOURCC('L','A','N','4')) << 32;
-				endpoints.erase(lanID);
-				for(pair<const int64_t, Endpoint>& e:endpoints){
-					Endpoint& endpoint=e.second;
-					if(endpoint.type==Endpoint::Type::UDP_RELAY && useTCP){
-						useTCP=false;
-						if(_preferredRelay.type==Endpoint::Type::TCP_RELAY){
-							preferredRelay=currentEndpoint=endpoint.id;
+		messageThread.Post([this]{
+			wasNetworkHandover=true;
+			if(currentEndpoint){
+				const Endpoint &_currentEndpoint=endpoints.at(currentEndpoint);
+				const Endpoint &_preferredRelay=endpoints.at(preferredRelay);
+				if(_currentEndpoint.type!=Endpoint::Type::UDP_RELAY){
+					if(_preferredRelay.type==Endpoint::Type::UDP_RELAY)
+						currentEndpoint=preferredRelay;
+					MutexGuard m(endpointsMutex);
+					constexpr int64_t lanID=(int64_t) (FOURCC('L', 'A', 'N', '4')) << 32;
+					endpoints.erase(lanID);
+					for(pair<const int64_t, Endpoint> &e:endpoints){
+						Endpoint &endpoint=e.second;
+						if(endpoint.type==Endpoint::Type::UDP_RELAY && useTCP){
+							useTCP=false;
+							if(_preferredRelay.type==Endpoint::Type::TCP_RELAY){
+								preferredRelay=currentEndpoint=endpoint.id;
+							}
+						}else if(endpoint.type==Endpoint::Type::TCP_RELAY && endpoint.socket){
+							endpoint.socket->Close();
+							//delete endpoint.socket;
+							//endpoint.socket=NULL;
 						}
-					}else if(endpoint.type==Endpoint::Type::TCP_RELAY && endpoint.socket){
-						endpoint.socket->Close();
-						//delete endpoint.socket;
-						//endpoint.socket=NULL;
+						//if(endpoint->type==Endpoint::Type::UDP_P2P_INET){
+						endpoint.averageRTT=0;
+						endpoint.rtts.Reset();
+						//}
 					}
-					//if(endpoint->type==Endpoint::Type::UDP_P2P_INET){
-					endpoint.averageRTT=0;
-					endpoint.rtts.Reset();
-					//}
 				}
 			}
-		}
-		lastUdpPingTime=0;
-		if(proxyProtocol==PROXY_SOCKS5)
-			InitUDPProxy();
-		if(allowP2p && currentEndpoint){
-			SendPublicEndpointsRequest();
-		}
-		BufferOutputStream s(4);
-		s.WriteInt32(dataSavingMode ? INIT_FLAG_DATA_SAVING_ENABLED : 0);
-		if(peerVersion<6){
-			SendPacketReliably(PKT_NETWORK_CHANGED, s.GetBuffer(), s.GetLength(), 1, 20);
-		}else{
-			Buffer buf(move(s));
-			SendExtra(buf, EXTRA_TYPE_NETWORK_CHANGED);
-		}
-		needReInitUdpProxy=true;
-		selectCanceller->CancelSelect();
-		didSendIPv6Endpoint=false;
+			lastUdpPingTime=0;
+			if(proxyProtocol==PROXY_SOCKS5)
+				InitUDPProxy();
+			if(allowP2p && currentEndpoint){
+				SendPublicEndpointsRequest();
+			}
+			BufferOutputStream s(4);
+			s.WriteInt32(dataSavingMode ? INIT_FLAG_DATA_SAVING_ENABLED : 0);
+			if(peerVersion<6){
+				SendPacketReliably(PKT_NETWORK_CHANGED, s.GetBuffer(), s.GetLength(), 1, 20);
+			}else{
+				Buffer buf(move(s));
+				SendExtra(buf, EXTRA_TYPE_NETWORK_CHANGED);
+			}
+			needReInitUdpProxy=true;
+			selectCanceller->CancelSelect();
+			didSendIPv6Endpoint=false;
 
-		AddIPv6Relays();
-		ResetUdpAvailability();
-		ResetEndpointPingStats();
+			AddIPv6Relays();
+			ResetUdpAvailability();
+			ResetEndpointPingStats();
+		});
 
 	}
 }
 
 double VoIPController::GetAverageRTT(){
+	ENFORCE_MSG_THREAD;
+
 	if(lastSentSeq>=lastRemoteAckSeq){
 		uint32_t diff=lastSentSeq-lastRemoteAckSeq;
 		//LOGV("rtt diff=%u", diff);
 		if(diff<32){
 			double res=0;
 			int count=0;
-			/*for(i=diff;i<32;i++){
-				if(remoteAcks[i-diff]>0){
-					res+=(remoteAcks[i-diff]-sentPacketTimes[i]);
-					count++;
-				}
-			}*/
-			MutexGuard m(queuedPacketsMutex);
 			for(std::vector<RecentOutgoingPacket>::iterator itr=recentOutgoingPackets.begin();itr!=recentOutgoingPackets.end();++itr){
 				if(itr->ackTime>0){
 					res+=(itr->ackTime-itr->sendTime);
@@ -536,28 +540,21 @@ void VoIPController::SetMicMute(bool mute){
 	if(echoCanceller)
 		echoCanceller->Enable(!mute);
 	if(state==STATE_ESTABLISHED){
-		for(shared_ptr<Stream>& s:outgoingStreams){
-			if(s->type==STREAM_TYPE_AUDIO){
-				s->enabled=!mute;
-				if(peerVersion<6){
-					unsigned char buf[2];
-					buf[0]=s->id;
-					buf[1]=(char) (mute ? 0 : 1);
-					SendPacketReliably(PKT_STREAM_STATE, buf, 2, .5f, 20);
-				}else{
-					SendStreamFlags(*s);
+		messageThread.Post([this]{
+			for(shared_ptr<Stream> &s:outgoingStreams){
+				if(s->type==STREAM_TYPE_AUDIO){
+					s->enabled=!micMuted;
+					if(peerVersion<6){
+						unsigned char buf[2];
+						buf[0]=s->id;
+						buf[1]=(char) (micMuted ? 0 : 1);
+						SendPacketReliably(PKT_STREAM_STATE, buf, 2, .5f, 20);
+					}else{
+						SendStreamFlags(*s);
+					}
 				}
 			}
-		}
-	}
-	if(mute){
-		if(noStreamsNopID==MessageThread::INVALID_ID)
-			noStreamsNopID=messageThread.Post(std::bind(&VoIPController::SendNopPacket, this), 0.2, 0.2);
-	}else{
-		if(noStreamsNopID!=MessageThread::INVALID_ID){
-			messageThread.Cancel(noStreamsNopID);
-			noStreamsNopID=MessageThread::INVALID_ID;
-		}
+		});
 	}
 }
 
@@ -621,7 +618,7 @@ string VoIPController::GetDebugString(){
 			 keyFingerprint[0],keyFingerprint[1],keyFingerprint[2],keyFingerprint[3],keyFingerprint[4],keyFingerprint[5],keyFingerprint[6],keyFingerprint[7],
 			 useMTProto2 ? " (MTProto2.0)" : "",
 			 lastSentSeq, lastRemoteAckSeq, lastRemoteSeq,
-			 conctl->GetSendLossCount(), recvLossCount, encoder ? encoder->GetPacketLoss() : 0,
+			 sendLosses, recvLossCount, encoder ? encoder->GetPacketLoss() : 0,
 			 encoder ? (encoder->GetBitrate()/1000) : 0,
 			 static_cast<unsigned int>(unsentStreamPackets),
 //			 audioPacketGrouping,
@@ -629,6 +626,29 @@ string VoIPController::GetDebugString(){
 			 (long long unsigned int)(stats.bytesSentMobile+stats.bytesSentWifi),
 			 (long long unsigned int)(stats.bytesRecvdMobile+stats.bytesRecvdWifi));
 	r+=buffer;
+
+	if(config.enableVideoSend){
+		shared_ptr<Stream> vstm=GetStreamByType(STREAM_TYPE_VIDEO, true);
+		if(vstm && vstm->enabled && videoPacketSender){
+			snprintf(buffer, sizeof(buffer), "\nVideo out: %ux%u '%c%c%c%c' %u kbit", vstm->width, vstm->height, PRINT_FOURCC(vstm->codec), videoPacketSender->GetBitrate());
+			r+=buffer;
+		}
+	}
+	if(!peerVideoDecoders.empty()){
+		r+="\nPeer codecs: ";
+		for(uint32_t codec:peerVideoDecoders){
+			snprintf(buffer, sizeof(buffer), "'%c%c%c%c' ", PRINT_FOURCC(codec));
+			r+=buffer;
+		}
+	}
+	if(config.enableVideoReceive){
+		shared_ptr<Stream> vstm=GetStreamByType(STREAM_TYPE_VIDEO, false);
+		if(vstm && vstm->enabled){
+			snprintf(buffer, sizeof(buffer), "\nVideo in: %ux%u '%c%c%c%c'", vstm->width, vstm->height, PRINT_FOURCC(vstm->codec));
+			r+=buffer;
+		}
+	}
+
 	return r;
 }
 
@@ -694,6 +714,40 @@ string VoIPController::GetDebugLog(){
 			{"out_packet_stats", lpkts}
 	}).dump();*/
 
+	vector<json11::Json> _endpoints;
+	for(pair<const int64_t, Endpoint>& _e:endpoints){
+		Endpoint& e=_e.second;
+		string type;
+		map<string, json11::Json> je{
+				{"rtt", (int)(e.averageRTT*1000.0)}
+		};
+		int64_t id=0;
+		if(e.type==Endpoint::Type::UDP_RELAY){
+			je["type"]=e.IsIPv6Only() ? "udp_relay6" : "udp_relay";
+			id=e.CleanID();
+			if(e.totalUdpPings==0)
+				je["udp_pings"]=0.0;
+			else
+				je["udp_pings"]=(double)e.totalUdpPingReplies/(double)e.totalUdpPings;
+			je["self_rtt"]=(int)(e.selfRtts.Average()*1000.0);
+		}else if(e.type==Endpoint::Type::TCP_RELAY){
+			je["type"]=e.IsIPv6Only() ? "tcp_relay6" : "tcp_relay";
+			id=e.CleanID();
+		}else if(e.type==Endpoint::Type::UDP_P2P_INET){
+			je["type"]=e.IsIPv6Only() ? "p2p_inet6" : "p2p_inet";
+		}else if(e.type==Endpoint::Type::UDP_P2P_LAN){
+			je["type"]="p2p_lan";
+		}
+		if(preferredRelay==e.id && wasEstablished)
+			je["pref"]=true;
+		if(id){
+			ostringstream s;
+			s << id;
+			je["id"]=s.str();
+		}
+		_endpoints.push_back(je);
+	}
+
 	string p2pType="none";
 	Endpoint& cur=endpoints[currentEndpoint];
 	if(cur.type==Endpoint::Type::UDP_P2P_INET)
@@ -715,9 +769,6 @@ string VoIPController::GetDebugLog(){
 	if(wasNetworkHandover)
 		problems.push_back("network_handover");
 
-	ostringstream prefRelay;
-	prefRelay << preferredRelay;
-
 	return json11::Json(json11::Json::object{
 			{"log_type", "call_stats"},
 			{"libtgvoip_version", LIBTGVOIP_VERSION},
@@ -725,17 +776,15 @@ string VoIPController::GetDebugLog(){
 			{"protocol_version", std::min(peerVersion, PROTOCOL_VERSION)},
 			{"udp_avail", udpConnectivityState==UDP_AVAILABLE},
 			{"tcp_used", useTCP},
-			{"relay_rtt", (int)(endpoints[preferredRelay].averageRTT*1000.0)},
 			{"p2p_type", p2pType},
-			{"rtt", (int)(endpoints[currentEndpoint].averageRTT*1000.0)},
 			{"packet_stats", json11::Json::object{
 					{"out", (int)seq},
 					{"in", (int)packetsReceived},
 					{"lost_out", (int)conctl->GetSendLossCount()},
 					{"lost_in", (int)recvLossCount}
 			}},
-			{"problems", problems},
-			{"pref_relay", prefRelay.str()}
+			{"endpoints", _endpoints},
+			{"problems", problems}
 	}).dump();
 }
 
@@ -798,40 +847,45 @@ uint32_t VoIPController::GetPeerCapabilities(){
 }
 
 void VoIPController::SendGroupCallKey(unsigned char *key){
-	if(!(peerCapabilities & TGVOIP_PEER_CAP_GROUP_CALLS)){
-		LOGE("Tried to send group call key but peer isn't capable of them");
-		return;
-	}
-	if(didSendGroupCallKey){
-		LOGE("Tried to send a group call key repeatedly");
-		return;
-	}
-	if(!isOutgoing){
-		LOGE("You aren't supposed to send group call key in an incoming call, use VoIPController::RequestCallUpgrade() instead");
-		return;
-	}
-	didSendGroupCallKey=true;
 	Buffer buf(256);
 	buf.CopyFrom(key, 0, 256);
-	SendExtra(buf, EXTRA_TYPE_GROUP_CALL_KEY);
+	shared_ptr<Buffer> keyPtr=make_shared<Buffer>(move(buf));
+	messageThread.Post([this, keyPtr]{
+		if(!(peerCapabilities & TGVOIP_PEER_CAP_GROUP_CALLS)){
+			LOGE("Tried to send group call key but peer isn't capable of them");
+			return;
+		}
+		if(didSendGroupCallKey){
+			LOGE("Tried to send a group call key repeatedly");
+			return;
+		}
+		if(!isOutgoing){
+			LOGE("You aren't supposed to send group call key in an incoming call, use VoIPController::RequestCallUpgrade() instead");
+			return;
+		}
+		didSendGroupCallKey=true;
+		SendExtra(*keyPtr, EXTRA_TYPE_GROUP_CALL_KEY);
+	});
 }
 
 void VoIPController::RequestCallUpgrade(){
-	if(!(peerCapabilities & TGVOIP_PEER_CAP_GROUP_CALLS)){
-		LOGE("Tried to send group call key but peer isn't capable of them");
-		return;
-	}
-	if(didSendUpgradeRequest){
-		LOGE("Tried to send upgrade request repeatedly");
-		return;
-	}
-	if(isOutgoing){
-		LOGE("You aren't supposed to send an upgrade request in an outgoing call, generate an encryption key and use VoIPController::SendGroupCallKey instead");
-		return;
-	}
-	didSendUpgradeRequest=true;
-	Buffer empty(0);
-	SendExtra(empty, EXTRA_TYPE_REQUEST_GROUP);
+	messageThread.Post([this]{
+		if(!(peerCapabilities & TGVOIP_PEER_CAP_GROUP_CALLS)){
+			LOGE("Tried to send group call key but peer isn't capable of them");
+			return;
+		}
+		if(didSendUpgradeRequest){
+			LOGE("Tried to send upgrade request repeatedly");
+			return;
+		}
+		if(isOutgoing){
+			LOGE("You aren't supposed to send an upgrade request in an outgoing call, generate an encryption key and use VoIPController::SendGroupCallKey instead");
+			return;
+		}
+		didSendUpgradeRequest=true;
+		Buffer empty(0);
+		SendExtra(empty, EXTRA_TYPE_REQUEST_GROUP);
+	});
 }
 
 void VoIPController::SetEchoCancellationStrength(int strength){
@@ -989,7 +1043,26 @@ void VoIPController::InitializeTimers(){
 void VoIPController::RunSendThread(){
 	InitializeAudio();
 	InitializeTimers();
-	SendInit();
+	messageThread.Post(bind(&VoIPController::SendInit, this));
+
+	while(true){
+		RawPendingOutgoingPacket pkt=rawSendQueue.GetBlocking();
+		if(pkt.packet.IsEmpty())
+			break;
+
+		if(IS_MOBILE_NETWORK(networkType))
+			stats.bytesSentMobile+=(uint64_t)pkt.packet.data.Length();
+		else
+			stats.bytesSentWifi+=(uint64_t)pkt.packet.data.Length();
+		if(pkt.packet.protocol==NetworkProtocol::TCP){
+			if(pkt.socket && !pkt.socket->IsFailed()){
+				pkt.socket->Send(std::move(pkt.packet));
+			}
+		}else{
+			udpSocket->Send(std::move(pkt.packet));
+		}
+	}
+
 	LOGI("=== send thread exiting ===");
 }
 
@@ -1011,12 +1084,14 @@ void VoIPController::SetState(int state){
 			messageThread.Post(std::bind(&VoIPController::UpdateAudioBitrate, this), 0.0, 0.3);
 			messageThread.Post(std::bind(&VoIPController::UpdateCongestion, this), 0.0, 1.0);
 			messageThread.Post(std::bind(&VoIPController::UpdateSignalBars, this), 1.0, 1.0);
-			messageThread.Post(std::bind(&VoIPController::TickJitterBufferAngCongestionControl, this), 0.0, 0.1);
+			messageThread.Post(std::bind(&VoIPController::TickJitterBufferAndCongestionControl, this), 0.0, 0.1);
 		}
 	}
 }
 
 void VoIPController::SendStreamFlags(Stream& stream){
+	ENFORCE_MSG_THREAD;
+
 	BufferOutputStream s(5);
 	s.WriteByte(stream.id);
 	uint32_t flags=0;
@@ -1024,6 +1099,8 @@ void VoIPController::SendStreamFlags(Stream& stream){
 		flags|=STREAM_FLAG_ENABLED;
 	if(stream.extraECEnabled)
 		flags|=STREAM_FLAG_EXTRA_EC;
+	if(stream.paused)
+		flags|=STREAM_FLAG_PAUSED;
 	s.WriteInt32(flags);
 	LOGV("My stream state: id %u flags %u", (unsigned int)stream.id, (unsigned int)flags);
 	Buffer buf(move(s));
@@ -1034,6 +1111,15 @@ shared_ptr<VoIPController::Stream> VoIPController::GetStreamByType(int type, boo
 	shared_ptr<Stream> s;
 	for(shared_ptr<Stream>& ss:(outgoing ? outgoingStreams : incomingStreams)){
 		if(ss->type==type)
+			return ss;
+	}
+	return s;
+}
+
+shared_ptr<VoIPController::Stream> VoIPController::GetStreamByID(unsigned char id, bool outgoing){
+	shared_ptr<Stream> s;
+	for(shared_ptr<Stream>& ss:(outgoing ? outgoingStreams : incomingStreams)){
+		if(ss->id==id)
 			return ss;
 	}
 	return s;
@@ -1064,95 +1150,105 @@ CellularCarrierInfo VoIPController::GetCarrierInfo(){
 
 #pragma mark - Audio I/O
 
-void VoIPController::AudioInputCallback(unsigned char* data, size_t length, unsigned char* secondaryData, size_t secondaryLength, void* param){
-	((VoIPController*)param)->HandleAudioInput(data, length, secondaryData, secondaryLength);
-}
-
 void VoIPController::HandleAudioInput(unsigned char *data, size_t len, unsigned char* secondaryData, size_t secondaryLen){
 	if(stopping)
 		return;
-	unsentStreamPacketsHistory.Add(static_cast<unsigned int>(unsentStreamPackets));
-	if(unsentStreamPacketsHistory.Average()>=maxUnsentStreamPackets && !videoSource){
-		LOGW("Resetting stalled send queue");
-		sendQueue.clear();
-		unsentStreamPacketsHistory.Reset();
-		unsentStreamPackets=0;
-	}
-	if(waitingForAcks || dontSendPackets>0 || ((unsigned int)unsentStreamPackets>=maxUnsentStreamPackets /*&& endpoints[currentEndpoint].type==Endpoint::Type::TCP_RELAY*/)){
-		LOGV("waiting for queue, dropping outgoing audio packet, %d %d %d [%d]", (unsigned int)unsentStreamPackets, waitingForAcks, dontSendPackets, maxUnsentStreamPackets);
-		return;
-	}
-	//LOGV("Audio packet size %u", (unsigned int)len);
-	if(!receivedInitAck)
-		return;
 
-	BufferOutputStream pkt(1500);
+	// TODO make an AudioPacketSender
 
-	bool hasExtraFEC=peerVersion>=7 && secondaryData && secondaryLen && shittyInternetMode;
-	unsigned char flags=(unsigned char) (len>255 || hasExtraFEC ? STREAM_DATA_FLAG_LEN16 : 0);
-	pkt.WriteByte((unsigned char) (1 | flags)); // streamID + flags
-	if(len>255 || hasExtraFEC){
-		int16_t lenAndFlags=static_cast<int16_t>(len);
-		if(hasExtraFEC)
-			lenAndFlags|=STREAM_DATA_XFLAG_EXTRA_FEC;
-		pkt.WriteInt16(lenAndFlags);
-	}else{
-		pkt.WriteByte((unsigned char) len);
+	Buffer dataBuf=outgoingAudioBufferPool.Get();
+	Buffer secondaryDataBuf=secondaryLen && secondaryData ? outgoingAudioBufferPool.Get() : Buffer();
+	dataBuf.CopyFrom(data, 0, len);
+	if(secondaryLen && secondaryData){
+		secondaryDataBuf.CopyFrom(secondaryData, 0, secondaryLen);
 	}
-	pkt.WriteInt32(audioTimestampOut);
-	pkt.WriteBytes(data, len);
+	shared_ptr<Buffer> dataBufPtr=make_shared<Buffer>(move(dataBuf));
+	shared_ptr<Buffer> secondaryDataBufPtr=make_shared<Buffer>(move(secondaryDataBuf));
 
-	if(hasExtraFEC){
-		Buffer ecBuf(secondaryLen);
-		ecBuf.CopyFrom(secondaryData, 0, secondaryLen);
-		ecAudioPackets.push_back(move(ecBuf));
-		while(ecAudioPackets.size()>4)
-			ecAudioPackets.erase(ecAudioPackets.begin());
-		pkt.WriteByte((unsigned char)MIN(ecAudioPackets.size(), extraEcLevel));
-		for(vector<Buffer>::iterator ecData=ecAudioPackets.begin()+MAX(0, (int)ecAudioPackets.size()-extraEcLevel);ecData!=ecAudioPackets.end();++ecData){
-			pkt.WriteByte((unsigned char)ecData->Length());
-			pkt.WriteBytes(*ecData);
+	messageThread.Post([this, dataBufPtr, secondaryDataBufPtr, len, secondaryLen](){
+		unsentStreamPacketsHistory.Add(static_cast<unsigned int>(unsentStreamPackets));
+		if(unsentStreamPacketsHistory.Average()>=maxUnsentStreamPackets && !videoPacketSender){
+			LOGW("Resetting stalled send queue");
+			sendQueue.clear();
+			unsentStreamPacketsHistory.Reset();
+			unsentStreamPackets=0;
 		}
-	}
+		if(waitingForAcks || dontSendPackets>0 || ((unsigned int) unsentStreamPackets>=maxUnsentStreamPackets /*&& endpoints[currentEndpoint].type==Endpoint::Type::TCP_RELAY*/)){
+			LOGV("waiting for queue, dropping outgoing audio packet, %d %d %d [%d]", (unsigned int) unsentStreamPackets, waitingForAcks, dontSendPackets, maxUnsentStreamPackets);
+			return;
+		}
+		//LOGV("Audio packet size %u", (unsigned int)len);
+		if(!receivedInitAck)
+			return;
 
-	unsentStreamPackets++;
-	PendingOutgoingPacket p{
-			/*.seq=*/GenerateOutSeq(),
-			/*.type=*/PKT_STREAM_DATA,
-			/*.len=*/pkt.GetLength(),
-			/*.data=*/Buffer(move(pkt)),
-			/*.endpoint=*/0,
-	};
+		BufferOutputStream pkt(1500);
 
-	conctl->PacketSent(p.seq, p.len);
-
-	SendOrEnqueuePacket(move(p));
-	if(peerVersion<7 && secondaryData && secondaryLen && shittyInternetMode){
-		Buffer ecBuf(secondaryLen);
-		ecBuf.CopyFrom(secondaryData, 0, secondaryLen);
-		ecAudioPackets.push_back(move(ecBuf));
-		while(ecAudioPackets.size()>4)
-			ecAudioPackets.erase(ecAudioPackets.begin());
-		pkt=BufferOutputStream(1500);
-		pkt.WriteByte(outgoingStreams[0]->id);
+		bool hasExtraFEC=peerVersion>=7 && secondaryLen && shittyInternetMode;
+		unsigned char flags=(unsigned char) (len>255 || hasExtraFEC ? STREAM_DATA_FLAG_LEN16 : 0);
+		pkt.WriteByte((unsigned char) (1 | flags)); // streamID + flags
+		if(len>255 || hasExtraFEC){
+			int16_t lenAndFlags=static_cast<int16_t>(len);
+			if(hasExtraFEC)
+				lenAndFlags|=STREAM_DATA_XFLAG_EXTRA_FEC;
+			pkt.WriteInt16(lenAndFlags);
+		}else{
+			pkt.WriteByte((unsigned char) len);
+		}
 		pkt.WriteInt32(audioTimestampOut);
-		pkt.WriteByte((unsigned char)MIN(ecAudioPackets.size(), extraEcLevel));
-		for(vector<Buffer>::iterator ecData=ecAudioPackets.begin()+MAX(0, (int)ecAudioPackets.size()-extraEcLevel);ecData!=ecAudioPackets.end();++ecData){
-			pkt.WriteByte((unsigned char)ecData->Length());
-			pkt.WriteBytes(*ecData);
+		pkt.WriteBytes(*dataBufPtr, 0, len);
+
+		if(hasExtraFEC){
+			Buffer ecBuf(secondaryLen);
+			ecBuf.CopyFrom(*secondaryDataBufPtr, 0, secondaryLen);
+			ecAudioPackets.push_back(move(ecBuf));
+			while(ecAudioPackets.size()>4)
+				ecAudioPackets.erase(ecAudioPackets.begin());
+			pkt.WriteByte((unsigned char) std::min((int) ecAudioPackets.size(), extraEcLevel));
+			for(vector<Buffer>::iterator ecData=ecAudioPackets.begin()+std::max(0, (int) ecAudioPackets.size()-extraEcLevel); ecData!=ecAudioPackets.end(); ++ecData){
+				pkt.WriteByte((unsigned char) ecData->Length());
+				pkt.WriteBytes(*ecData);
+			}
 		}
 
+		unsentStreamPackets++;
 		PendingOutgoingPacket p{
-				GenerateOutSeq(),
-				PKT_STREAM_EC,
-				pkt.GetLength(),
-				Buffer(move(pkt)),
-				0
+				/*.seq=*/GenerateOutSeq(),
+				/*.type=*/PKT_STREAM_DATA,
+				/*.len=*/pkt.GetLength(),
+				/*.data=*/Buffer(move(pkt)),
+				/*.endpoint=*/0,
 		};
-		SendOrEnqueuePacket(move(p));
-	}
 
-	audioTimestampOut+=outgoingStreams[0]->frameDuration;
+		conctl->PacketSent(p.seq, p.len);
+
+		SendOrEnqueuePacket(move(p));
+		if(peerVersion<7 && secondaryLen && shittyInternetMode){
+			Buffer ecBuf(secondaryLen);
+			ecBuf.CopyFrom(*secondaryDataBufPtr, 0, secondaryLen);
+			ecAudioPackets.push_back(move(ecBuf));
+			while(ecAudioPackets.size()>4)
+				ecAudioPackets.erase(ecAudioPackets.begin());
+			pkt=BufferOutputStream(1500);
+			pkt.WriteByte(outgoingStreams[0]->id);
+			pkt.WriteInt32(audioTimestampOut);
+			pkt.WriteByte((unsigned char) std::min((int) ecAudioPackets.size(), extraEcLevel));
+			for(vector<Buffer>::iterator ecData=ecAudioPackets.begin()+std::max(0, (int) ecAudioPackets.size()-extraEcLevel); ecData!=ecAudioPackets.end(); ++ecData){
+				pkt.WriteByte((unsigned char) ecData->Length());
+				pkt.WriteBytes(*ecData);
+			}
+
+			PendingOutgoingPacket p{
+					GenerateOutSeq(),
+					PKT_STREAM_EC,
+					pkt.GetLength(),
+					Buffer(move(pkt)),
+					0
+			};
+			SendOrEnqueuePacket(move(p));
+		}
+
+		audioTimestampOut+=outgoingStreams[0]->frameDuration;
+	});
 }
 
 void VoIPController::InitializeAudio(){
@@ -1181,7 +1277,7 @@ void VoIPController::InitializeAudio(){
 	LOGI("AEC: %d NS: %d AGC: %d", config.enableAEC, config.enableNS, config.enableAGC);
 	echoCanceller=new EchoCanceller(config.enableAEC, config.enableNS, config.enableAGC);
 	encoder=new OpusEncoder(audioInput, true);
-	encoder->SetCallback(AudioInputCallback, this);
+	encoder->SetCallback(bind(&VoIPController::HandleAudioInput, this, placeholders::_1, placeholders::_2, placeholders::_3, placeholders::_4));
 	encoder->SetOutputFrameDuration(outgoingAudioStream->frameDuration);
 	encoder->SetEchoCanceller(echoCanceller);
 	encoder->SetSecondaryEncoderEnabled(false);
@@ -1212,7 +1308,7 @@ void VoIPController::StartAudio(){
 	if(!micMuted){
 		audioInput->Start();
 		if(!audioInput->IsInitialized()){
-			LOGE("Erorr initializing audio capture");
+			LOGE("Error initializing audio capture");
 			lastError=ERROR_AUDIO_IO;
 
 			SetState(STATE_FAILED);
@@ -1292,14 +1388,13 @@ uint32_t VoIPController::GenerateOutSeq(){
 	return seq++;
 }
 
-void VoIPController::WritePacketHeader(uint32_t pseq, BufferOutputStream *s, unsigned char type, uint32_t length){
+void VoIPController::WritePacketHeader(uint32_t pseq, BufferOutputStream *s, unsigned char type, uint32_t length, PacketSender* source){
 	uint32_t acks=0;
 	int i;
 	for(i=0;i<32;i++){
-		if(recvPacketTimes[i]>0)
-			acks|=1;
-		if(i<31)
-			acks<<=1;
+		if(find(recentIncomingPackets.begin(), recentIncomingPackets.end(), lastRemoteSeq-(i+1))!=recentIncomingPackets.end()){
+			acks |= (1 << (31-i));
+		}
 	}
 
 	if(peerVersion>=8 || (!peerVersion && connectionMaxLayer>=92)){
@@ -1307,7 +1402,6 @@ void VoIPController::WritePacketHeader(uint32_t pseq, BufferOutputStream *s, uns
 		s->WriteInt32(lastRemoteSeq);
 		s->WriteInt32(pseq);
 		s->WriteInt32(acks);
-		MutexGuard m(queuedPacketsMutex);
 		unsigned char flags;
 		if(currentExtras.empty()){
 			flags=0;
@@ -1399,7 +1493,6 @@ void VoIPController::WritePacketHeader(uint32_t pseq, BufferOutputStream *s, uns
 			s->WriteInt32(pseq);
 			s->WriteInt32(acks);
 			if(peerVersion>=6){
-				MutexGuard m(queuedPacketsMutex);
 				if(currentExtras.empty()){
 					s->WriteByte(0);
 				}else{
@@ -1420,14 +1513,16 @@ void VoIPController::WritePacketHeader(uint32_t pseq, BufferOutputStream *s, uns
 	}
 
 
-	MutexGuard m(queuedPacketsMutex);
+	unacknowledgedIncomingPacketCount=0;
 	recentOutgoingPackets.push_back(RecentOutgoingPacket{
 			pseq,
 			0,
 			GetCurrentTime(),
 			0,
 			type,
-			length
+			length,
+			source,
+			false
 	});
 	while(recentOutgoingPackets.size()>MAX_RECENT_PACKETS){
 		recentOutgoingPackets.erase(recentOutgoingPackets.begin());
@@ -1439,62 +1534,62 @@ void VoIPController::WritePacketHeader(uint32_t pseq, BufferOutputStream *s, uns
 
 
 void VoIPController::SendInit(){
-	{
-		MutexGuard m(endpointsMutex);
-		uint32_t initSeq=GenerateOutSeq();
-		for(pair<const int64_t, Endpoint>& _e:endpoints){
-			Endpoint& e=_e.second;
-			if(e.type==Endpoint::Type::TCP_RELAY && !useTCP)
-				continue;
-			BufferOutputStream out(1024);
-			out.WriteInt32(PROTOCOL_VERSION);
-			out.WriteInt32(MIN_PROTOCOL_VERSION);
-			uint32_t flags=0;
-			if(config.enableCallUpgrade)
-				flags|=INIT_FLAG_GROUP_CALLS_SUPPORTED;
-			if(config.enableVideoReceive)
-				flags|=INIT_FLAG_VIDEO_RECV_SUPPORTED;
-			if(config.enableVideoSend)
-				flags|=INIT_FLAG_VIDEO_SEND_SUPPORTED;
-			if(dataSavingMode)
-				flags|=INIT_FLAG_DATA_SAVING_ENABLED;
-			out.WriteInt32(flags);
-			if(connectionMaxLayer<74){
-				out.WriteByte(2); // audio codecs count
-				out.WriteByte(CODEC_OPUS_OLD);
-				out.WriteByte(0);
-				out.WriteByte(0);
-				out.WriteByte(0);
-				out.WriteInt32(CODEC_OPUS);
-				out.WriteByte(0); // video codecs count (decode)
-				out.WriteByte(0); // video codecs count (encode)
-			}else{
-				out.WriteByte(1);
-				out.WriteInt32(CODEC_OPUS);
-				vector<uint32_t> decoders=config.enableVideoReceive ? video::VideoRenderer::GetAvailableDecoders() : vector<uint32_t>();
-				vector<uint32_t> encoders=config.enableVideoSend ? video::VideoSource::GetAvailableEncoders() : vector<uint32_t>();
-				out.WriteByte((unsigned char)decoders.size());
-				for(uint32_t id:decoders){
-					out.WriteInt32(id);
-				}
-				if(connectionMaxLayer>=92)
-					out.WriteByte((unsigned char)video::VideoRenderer::GetMaximumResolution());
-				else
-					out.WriteByte(0);
-				/*out.WriteByte((unsigned char)encoders.size());
-				for(uint32_t id:encoders){
-					out.WriteInt32(id);
-				}*/
+	ENFORCE_MSG_THREAD;
+
+	uint32_t initSeq=GenerateOutSeq();
+	for(pair<const int64_t, Endpoint>& _e:endpoints){
+		Endpoint& e=_e.second;
+		if(e.type==Endpoint::Type::TCP_RELAY && !useTCP)
+			continue;
+		BufferOutputStream out(1024);
+		out.WriteInt32(PROTOCOL_VERSION);
+		out.WriteInt32(MIN_PROTOCOL_VERSION);
+		uint32_t flags=0;
+		if(config.enableCallUpgrade)
+			flags|=INIT_FLAG_GROUP_CALLS_SUPPORTED;
+		if(config.enableVideoReceive)
+			flags|=INIT_FLAG_VIDEO_RECV_SUPPORTED;
+		if(config.enableVideoSend)
+			flags|=INIT_FLAG_VIDEO_SEND_SUPPORTED;
+		if(dataSavingMode)
+			flags|=INIT_FLAG_DATA_SAVING_ENABLED;
+		out.WriteInt32(flags);
+		if(connectionMaxLayer<74){
+			out.WriteByte(2); // audio codecs count
+			out.WriteByte(CODEC_OPUS_OLD);
+			out.WriteByte(0);
+			out.WriteByte(0);
+			out.WriteByte(0);
+			out.WriteInt32(CODEC_OPUS);
+			out.WriteByte(0); // video codecs count (decode)
+			out.WriteByte(0); // video codecs count (encode)
+		}else{
+			out.WriteByte(1);
+			out.WriteInt32(CODEC_OPUS);
+			vector<uint32_t> decoders=config.enableVideoReceive ? video::VideoRenderer::GetAvailableDecoders() : vector<uint32_t>();
+			vector<uint32_t> encoders=config.enableVideoSend ? video::VideoSource::GetAvailableEncoders() : vector<uint32_t>();
+			out.WriteByte((unsigned char)decoders.size());
+			for(uint32_t id:decoders){
+				out.WriteInt32(id);
 			}
-			SendOrEnqueuePacket(PendingOutgoingPacket{
-					/*.seq=*/initSeq,
-					/*.type=*/PKT_INIT,
-					/*.len=*/out.GetLength(),
-					/*.data=*/Buffer(move(out)),
-					/*.endpoint=*/e.id
-			});
+			if(connectionMaxLayer>=92)
+				out.WriteByte((unsigned char)video::VideoRenderer::GetMaximumResolution());
+			else
+				out.WriteByte(0);
+			/*out.WriteByte((unsigned char)encoders.size());
+			for(uint32_t id:encoders){
+				out.WriteInt32(id);
+			}*/
 		}
+		SendOrEnqueuePacket(PendingOutgoingPacket{
+				/*.seq=*/initSeq,
+				/*.type=*/PKT_INIT,
+				/*.len=*/out.GetLength(),
+				/*.data=*/Buffer(move(out)),
+				/*.endpoint=*/e.id
+		});
 	}
+
 	if(state==STATE_WAIT_INIT)
 		SetState(STATE_WAIT_INIT_ACK);
 	messageThread.Post([this]{
@@ -1515,11 +1610,11 @@ void VoIPController::InitUDPProxy(){
 	string proxyHostPort(sbuf);
 	if(proxyHostPort==lastTestedProxyServer && !proxySupportsUDP){
 		LOGI("Proxy does not support UDP - using UDP directly instead");
-		ResetUdpAvailability();
+        messageThread.Post(bind(&VoIPController::ResetUdpAvailability, this));
 		return;
 	}
 	
-	NetworkSocket* tcp=NetworkSocket::Create(PROTO_TCP);
+	NetworkSocket* tcp=NetworkSocket::Create(NetworkProtocol::TCP);
 	tcp->Connect(resolvedProxyAddress, proxyPort);
 	
 	vector<NetworkSocket*> writeSockets;
@@ -1560,16 +1655,14 @@ void VoIPController::InitUDPProxy(){
 	}else{
 		udpSocket=udpProxy;
 	}
-	ResetUdpAvailability();
+	messageThread.Post(bind(&VoIPController::ResetUdpAvailability, this));
 }
 
 void VoIPController::RunRecvThread(){
 	LOGI("Receive thread starting");
-	Buffer buffer(1500);
-	NetworkPacket packet={0};
 	if(proxyProtocol==PROXY_SOCKS5){
 		resolvedProxyAddress=NetworkSocket::ResolveDomainName(proxyAddress);
-		if(!resolvedProxyAddress){
+		if(resolvedProxyAddress.IsEmpty()){
 			LOGW("Error resolving proxy address %s", proxyAddress.c_str());
 			SetState(STATE_FAILED);
 			return;
@@ -1584,9 +1677,6 @@ void VoIPController::RunRecvThread(){
 			InitUDPProxy();
 			needReInitUdpProxy=false;
 		}
-		
-		packet.data=*buffer;
-		packet.length=buffer.Length();
 
 		vector<NetworkSocket*> readSockets;
 		vector<NetworkSocket*> errorSockets;
@@ -1602,12 +1692,12 @@ void VoIPController::RunRecvThread(){
 				const Endpoint& e=_e.second;
 				if(e.type==Endpoint::Type::TCP_RELAY){
 					if(e.socket){
-						readSockets.push_back(e.socket);
-						errorSockets.push_back(e.socket);
+						readSockets.push_back(&*e.socket);
+						errorSockets.push_back(&*e.socket);
 						if(!e.socket->IsReadyToSend()){
-							NetworkSocketSOCKS5Proxy* proxy=dynamic_cast<NetworkSocketSOCKS5Proxy*>(e.socket);
+							NetworkSocketSOCKS5Proxy* proxy=dynamic_cast<NetworkSocketSOCKS5Proxy*>(&*e.socket);
 							if(!proxy || proxy->NeedSelectForSending())
-    							writeSockets.push_back(e.socket);
+    							writeSockets.push_back(&*e.socket);
 						}
 					}
 				}
@@ -1615,7 +1705,6 @@ void VoIPController::RunRecvThread(){
 		}
 
 		{
-			MutexGuard m(socketSelectMutex);
 			bool selRes=NetworkSocket::Select(readSockets, writeSockets, errorSockets, selectCanceller);
 			if(!selRes){
 				LOGV("Select canceled");
@@ -1635,10 +1724,9 @@ void VoIPController::RunRecvThread(){
 			for(NetworkSocket*& socket:errorSockets){
 				for(pair<const int64_t, Endpoint>& _e:endpoints){
 					Endpoint& e=_e.second;
-					if(e.socket && e.socket==socket){
+					if(e.socket && &*e.socket==socket){
 						e.socket->Close();
-						delete e.socket;
-						e.socket=NULL;
+						e.socket.reset();
 						LOGI("Closing failed TCP socket for %s:%u", e.GetAddress().ToString().c_str(), e.port);
 					}
 				}
@@ -1648,99 +1736,49 @@ void VoIPController::RunRecvThread(){
 
 		for(NetworkSocket*& socket:readSockets){
 			//while(packet.length){
-			packet.length=1500;
-			socket->Receive(&packet);
-			if(!packet.address){
+            NetworkPacket packet=socket->Receive();
+			if(packet.address.IsEmpty()){
 				LOGE("Packet has null address. This shouldn't happen.");
 				continue;
 			}
-			size_t len=packet.length;
-			if(!len){
+			if(packet.data.IsEmpty()){
 				LOGE("Packet has zero length.");
 				continue;
 			}
 			//LOGV("Received %d bytes from %s:%d at %.5lf", len, packet.address->ToString().c_str(), packet.port, GetCurrentTime());
-			int64_t srcEndpointID=0;
-
-			IPv4Address *src4=dynamic_cast<IPv4Address *>(packet.address);
-			if(src4){
-				MutexGuard m(endpointsMutex);
-				for(pair<const int64_t, Endpoint>& _e:endpoints){
-					const Endpoint& e=_e.second;
-					if(e.address==*src4 && e.port==packet.port){
-						if((e.type!=Endpoint::Type::TCP_RELAY && packet.protocol==PROTO_UDP) || (e.type==Endpoint::Type::TCP_RELAY && packet.protocol==PROTO_TCP)){
-							srcEndpointID=e.id;
-							break;
-						}
-					}
-				}
-				if(!srcEndpointID && packet.protocol==PROTO_UDP){
-					try{
-						Endpoint &p2p=GetEndpointByType(Endpoint::Type::UDP_P2P_INET);
-						if(p2p.rtts[0]==0.0 && p2p.address.PrefixMatches(24, *packet.address)){
-							LOGD("Packet source matches p2p endpoint partially: %s:%u", packet.address->ToString().c_str(), packet.port);
-							srcEndpointID=p2p.id;
-						}
-					}catch(out_of_range& ex){}
-				}
-			}else{
-				IPv6Address *src6=dynamic_cast<IPv6Address *>(packet.address);
-				if(src6){
-					MutexGuard m(endpointsMutex);
-					for(pair<const int64_t, Endpoint> &_e:endpoints){
-						const Endpoint& e=_e.second;
-						if(e.v6address==*src6 && e.port==packet.port && e.IsIPv6Only()){
-							if((e.type!=Endpoint::Type::TCP_RELAY && packet.protocol==PROTO_UDP) || (e.type==Endpoint::Type::TCP_RELAY && packet.protocol==PROTO_TCP)){
-								srcEndpointID=e.id;
-								break;
-							}
-						}
-					}
-				}
-			}
-
-			if(!srcEndpointID){
-				LOGW("Received a packet from unknown source %s:%u", packet.address->ToString().c_str(), packet.port);
-				continue;
-			}
-			if(len<=0){
-				//LOGW("error receiving: %d / %s", errno, strerror(errno));
-				continue;
-			}
-			if(IS_MOBILE_NETWORK(networkType))
-				stats.bytesRecvdMobile+=(uint64_t) len;
-			else
-				stats.bytesRecvdWifi+=(uint64_t) len;
-			try{
-				ProcessIncomingPacket(packet, endpoints.at(srcEndpointID));
-			}catch(out_of_range& x){
-				LOGW("Error parsing packet: %s", x.what());
-			}
-			//}
+			messageThread.Post(bind(&VoIPController::NetworkPacketReceived, this, make_shared<NetworkPacket>(move(packet))));
 		}
 
-		for(vector<PendingOutgoingPacket>::iterator opkt=sendQueue.begin();opkt!=sendQueue.end();){
-			Endpoint* endpoint=GetEndpointForPacket(*opkt);
-			if(!endpoint){
-				opkt=sendQueue.erase(opkt);
-				LOGE("SendQueue contained packet for nonexistent endpoint");
-				continue;
-			}
-			bool canSend;
-			if(endpoint->type!=Endpoint::Type::TCP_RELAY)
-				canSend=realUdpSocket->IsReadyToSend();
-			else
-				canSend=endpoint->socket && endpoint->socket->IsReadyToSend();
-			if(canSend){
-				LOGI("Sending queued packet");
-				SendOrEnqueuePacket(move(*opkt), false);
-				opkt=sendQueue.erase(opkt);
-			}else{
-				++opkt;
-			}
+		if(!writeSockets.empty()){
+			messageThread.Post(bind(&VoIPController::TrySendQueuedPackets, this));
 		}
 	}
 	LOGI("=== recv thread exiting ===");
+}
+
+void VoIPController::TrySendQueuedPackets(){
+	ENFORCE_MSG_THREAD;
+
+	for(vector<PendingOutgoingPacket>::iterator opkt=sendQueue.begin();opkt!=sendQueue.end();){
+		Endpoint* endpoint=GetEndpointForPacket(*opkt);
+		if(!endpoint){
+			opkt=sendQueue.erase(opkt);
+			LOGE("SendQueue contained packet for nonexistent endpoint");
+			continue;
+		}
+		bool canSend;
+		if(endpoint->type!=Endpoint::Type::TCP_RELAY)
+			canSend=realUdpSocket->IsReadyToSend();
+		else
+			canSend=endpoint->socket && endpoint->socket->IsReadyToSend();
+		if(canSend){
+			LOGI("Sending queued packet");
+			SendOrEnqueuePacket(move(*opkt), false);
+			opkt=sendQueue.erase(opkt);
+		}else{
+			++opkt;
+		}
+	}
 }
 
 bool VoIPController::WasOutgoingPacketAcknowledged(uint32_t seq){
@@ -1759,10 +1797,69 @@ VoIPController::RecentOutgoingPacket *VoIPController::GetRecentOutgoingPacket(ui
 	return NULL;
 }
 
+void VoIPController::NetworkPacketReceived(shared_ptr<NetworkPacket> _packet){
+	ENFORCE_MSG_THREAD;
+
+	NetworkPacket& packet=*_packet;
+
+	int64_t srcEndpointID=0;
+
+	if(!packet.address.isIPv6){
+		for(pair<const int64_t, Endpoint>& _e:endpoints){
+			const Endpoint& e=_e.second;
+			if(e.address==packet.address && e.port==packet.port){
+				if((e.type!=Endpoint::Type::TCP_RELAY && packet.protocol==NetworkProtocol::UDP) || (e.type==Endpoint::Type::TCP_RELAY && packet.protocol==NetworkProtocol::TCP)){
+					srcEndpointID=e.id;
+					break;
+				}
+			}
+		}
+		if(!srcEndpointID && packet.protocol==NetworkProtocol::UDP){
+			try{
+				Endpoint &p2p=GetEndpointByType(Endpoint::Type::UDP_P2P_INET);
+				if(p2p.rtts[0]==0.0 && p2p.address.PrefixMatches(24, packet.address)){
+					LOGD("Packet source matches p2p endpoint partially: %s:%u", packet.address.ToString().c_str(), packet.port);
+					srcEndpointID=p2p.id;
+				}
+			}catch(out_of_range& ex){}
+		}
+	}else{
+		for(pair<const int64_t, Endpoint> &_e:endpoints){
+			const Endpoint& e=_e.second;
+			if(e.v6address==packet.address && e.port==packet.port && e.IsIPv6Only()){
+				if((e.type!=Endpoint::Type::TCP_RELAY && packet.protocol==NetworkProtocol::UDP) || (e.type==Endpoint::Type::TCP_RELAY && packet.protocol==NetworkProtocol::TCP)){
+					srcEndpointID=e.id;
+					break;
+				}
+			}
+		}
+	}
+
+	if(!srcEndpointID){
+		LOGW("Received a packet from unknown source %s:%u", packet.address.ToString().c_str(), packet.port);
+		return;
+	}
+	/*if(len<=0){
+		//LOGW("error receiving: %d / %s", errno, strerror(errno));
+		continue;
+	}*/
+	if(IS_MOBILE_NETWORK(networkType))
+		stats.bytesRecvdMobile+=(uint64_t) packet.data.Length();
+	else
+		stats.bytesRecvdWifi+=(uint64_t) packet.data.Length();
+	try{
+		ProcessIncomingPacket(packet, endpoints.at(srcEndpointID));
+	}catch(out_of_range& x){
+		LOGW("Error parsing packet: %s", x.what());
+	}
+}
+
 void VoIPController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcEndpoint){
-	unsigned char *buffer=packet.data;
-	size_t len=packet.length;
-	BufferInputStream in(buffer, (size_t) len);
+	ENFORCE_MSG_THREAD;
+
+	unsigned char *buffer=*packet.data;
+	size_t len=packet.data.Length();
+	BufferInputStream in(packet.data);
 	bool hasPeerTag=false;
 	if(peerVersion<9 || srcEndpoint.type==Endpoint::Type::UDP_RELAY || srcEndpoint.type==Endpoint::Type::TCP_RELAY){
 		if(memcmp(buffer, srcEndpoint.type==Endpoint::Type::UDP_RELAY || srcEndpoint.type==Endpoint::Type::TCP_RELAY ? (void *) srcEndpoint.peerTag : (void *) callID, 16)!=0){
@@ -1786,10 +1883,17 @@ void VoIPController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcE
 				in.ReadBytes(myIP, 16);
 				int32_t myPort=in.ReadInt32();
 				//udpConnectivityState=UDP_AVAILABLE;
-				LOGV("Received UDP ping reply from %s:%d: date=%d, queryID=%ld, my IP=%s, my port=%d", srcEndpoint.address.ToString().c_str(), srcEndpoint.port, date, (long int) queryID, IPv4Address(*reinterpret_cast<uint32_t *>(myIP+12)).ToString().c_str(), myPort);
+				double selfRTT=0.0;
 				srcEndpoint.udpPongCount++;
+				srcEndpoint.totalUdpPingReplies++;
+				if(srcEndpoint.udpPingTimes.find(queryID)!=srcEndpoint.udpPingTimes.end()){
+					double sendTime=srcEndpoint.udpPingTimes[queryID];
+					srcEndpoint.udpPingTimes.erase(queryID);
+					srcEndpoint.selfRtts.Add(selfRTT=GetCurrentTime()-sendTime);
+				}
+				LOGV("Received UDP ping reply from %s:%d: date=%d, queryID=%ld, my IP=%s, my port=%d, selfRTT=%f", srcEndpoint.address.ToString().c_str(), srcEndpoint.port, date, (long int) queryID, NetworkAddress::IPv4(*reinterpret_cast<uint32_t *>(myIP+12)).ToString().c_str(), myPort, selfRTT);
 				if(srcEndpoint.IsIPv6Only() && !didSendIPv6Endpoint){
-					IPv6Address realAddr(myIP);
+					NetworkAddress realAddr=NetworkAddress::IPv6(myIP);
 					if(realAddr==myIPv6){
 						LOGI("Public IPv6 matches local address");
 						useIPv6=true;
@@ -1806,7 +1910,6 @@ void VoIPController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcE
 			}
 		}else if(tlid==TLID_UDP_REFLECTOR_PEER_INFO){
 			if(in.Remaining()>=16){
-				MutexGuard _m(endpointsMutex);
 				uint32_t myAddr=(uint32_t) in.ReadInt32();
 				uint32_t myPort=(uint32_t) in.ReadInt32();
 				uint32_t peerAddr=(uint32_t) in.ReadInt32();
@@ -1818,22 +1921,26 @@ void VoIPController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcE
 				if(currentEndpoint==p2pID || currentEndpoint==lanID)
 					currentEndpoint=preferredRelay;
 
-				endpoints.erase(lanID);
+				if(endpoints.find(lanID)!=endpoints.end()){
+					MutexGuard m(endpointsMutex);
+					endpoints.erase(lanID);
+				}
 
-				IPv4Address _peerAddr(peerAddr);
-				IPv6Address emptyV6(string("::0"));
 				unsigned char peerTag[16];
-				LOGW("Received reflector peer info, my=%s:%u, peer=%s:%u", IPv4Address(myAddr).ToString().c_str(), myPort, IPv4Address(peerAddr).ToString().c_str(), peerPort);
+				LOGW("Received reflector peer info, my=%s:%u, peer=%s:%u", NetworkAddress::IPv4(myAddr).ToString().c_str(), myPort, NetworkAddress::IPv4(peerAddr).ToString().c_str(), peerPort);
 				if(waitingForRelayPeerInfo){
-					Endpoint p2p(p2pID, (uint16_t) peerPort, _peerAddr, emptyV6, Endpoint::Type::UDP_P2P_INET, peerTag);
-					endpoints[p2pID]=p2p;
+					Endpoint p2p(p2pID, (uint16_t) peerPort, NetworkAddress::IPv4(peerAddr), NetworkAddress::Empty(), Endpoint::Type::UDP_P2P_INET, peerTag);
+					{
+    					MutexGuard m(endpointsMutex);
+						endpoints[p2pID]=p2p;
+					}
 					if(myAddr==peerAddr){
 						LOGW("Detected LAN");
-						IPv4Address lanAddr(0);
+						NetworkAddress lanAddr=NetworkAddress::IPv4(0);
 						udpSocket->GetLocalInterfaceInfo(&lanAddr, NULL);
 
 						BufferOutputStream pkt(8);
-						pkt.WriteInt32(lanAddr.GetAddress());
+						pkt.WriteInt32(lanAddr.addr.ipv4);
 						pkt.WriteInt32(udpSocket->GetLocalPort());
 						if(peerVersion<6){
 							SendPacketReliably(PKT_LAN_ENDPOINT, pkt.GetBuffer(), pkt.GetLength(), 0.5, 10);
@@ -1912,7 +2019,7 @@ void VoIPController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcE
 			return;
 		}
 
-		crypto.aes_ige_decrypt(packet.data+in.GetOffset(), decrypted, decryptedLen, aesKey, aesIv);
+		crypto.aes_ige_decrypt(*packet.data+in.GetOffset(), decrypted, decryptedLen, aesKey, aesIv);
 
 		in=BufferInputStream(decrypted, decryptedLen);
 		//LOGD("received packet length: %d", in.ReadInt32());
@@ -1955,11 +2062,10 @@ void VoIPController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcE
 	}
 
 	if(srcEndpoint.type==Endpoint::Type::UDP_P2P_INET && !srcEndpoint.IsIPv6Only()){
-		if(srcEndpoint.port!=packet.port || srcEndpoint.address!=*packet.address){
-			IPv4Address *v4=dynamic_cast<IPv4Address *>(packet.address);
-			if(v4){
-				LOGI("Incoming packet was decrypted successfully, changing P2P endpoint to %s:%u", packet.address->ToString().c_str(), packet.port);
-				srcEndpoint.address=*v4;
+		if(srcEndpoint.port!=packet.port || srcEndpoint.address!=packet.address){
+			if(!packet.address.isIPv6){
+				LOGI("Incoming packet was decrypted successfully, changing P2P endpoint to %s:%u", packet.address.ToString().c_str(), packet.port);
+				srcEndpoint.address=packet.address;
 				srcEndpoint.port=packet.port;
 			}
 		}
@@ -2044,36 +2150,38 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 		}
 	}
 	packetsReceived++;
-	if(seqgt(pseq, lastRemoteSeq)){
-		uint32_t diff=pseq-lastRemoteSeq;
-		if(diff>31){
-			memset(recvPacketTimes, 0, 32*sizeof(double));
-		}else{
-			memmove(&recvPacketTimes[diff], recvPacketTimes, (32-diff)*sizeof(double));
-			if(diff>1){
-				memset(recvPacketTimes, 0, diff*sizeof(double));
-			}
-			recvPacketTimes[0]=GetCurrentTime();
-		}
-		lastRemoteSeq=pseq;
-	}else if(!seqgt(pseq, lastRemoteSeq) && lastRemoteSeq-pseq<32){
-		if(recvPacketTimes[lastRemoteSeq-pseq]!=0){
-			LOGW("Received duplicated packet for seq %u", pseq);
 
+	if(seqgt(pseq, lastRemoteSeq-MAX_RECENT_PACKETS)){
+		if(find(recentIncomingPackets.begin(), recentIncomingPackets.end(), pseq)!=recentIncomingPackets.end()){
+			LOGW("Received duplicated packet for seq %u", pseq);
 			return;
 		}
-		recvPacketTimes[lastRemoteSeq-pseq]=GetCurrentTime();
-	}else if(lastRemoteSeq-pseq>=32){
+		recentIncomingPackets.push_back(pseq);
+		while(recentIncomingPackets.size()>MAX_RECENT_PACKETS)
+			recentIncomingPackets.erase(recentIncomingPackets.begin());
+		if(seqgt(pseq, lastRemoteSeq))
+			lastRemoteSeq=pseq;
+	}else{
 		LOGW("Packet %u is out of order and too late", pseq);
-
 		return;
 	}
-	bool didAckNewPackets=false;
-	unsigned int newlyAckedVideoBytes=0;
-	if(seqgt(ackId, lastRemoteAckSeq)){
-		didAckNewPackets=true;
 
-		MutexGuard _m(queuedPacketsMutex);
+	if(pflags & XPFLAG_HAS_EXTRA){
+		unsigned char extraCount=in.ReadByte();
+		for(int i=0;i<extraCount;i++){
+			size_t extraLen=in.ReadByte();
+			Buffer xbuffer(extraLen);
+			in.ReadBytes(*xbuffer, extraLen);
+			ProcessExtraData(xbuffer);
+		}
+	}
+
+	uint32_t recvTS=0;
+	if(pflags & XPFLAG_HAS_RECV_TS){
+		recvTS=static_cast<uint32_t>(in.ReadInt32());
+	}
+	if(seqgt(ackId, lastRemoteAckSeq)){
+
 		if(waitingForAcks && lastRemoteAckSeq>=firstSentPing){
 			rttHistory.Reset();
 			waitingForAcks=false;
@@ -2083,101 +2191,72 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 			}, 1.0);
 			LOGI("resuming sending");
 		}
+		vector<uint32_t> peerAcks;
 		lastRemoteAckSeq=ackId;
 		conctl->PacketAcknowledged(ackId);
-		unsigned int i;
-		for(i=0;i<31;i++){
-			for(vector<RecentOutgoingPacket>::iterator itr=recentOutgoingPackets.begin();itr!=recentOutgoingPackets.end();++itr){
-				if(itr->ackTime!=0)
-					continue;
-				if(((acks >> (31-i)) & 1) && itr->seq==ackId-(i+1)){
-					itr->ackTime=GetCurrentTime();
-					conctl->PacketAcknowledged(itr->seq);
-				}
+		peerAcks.push_back(ackId);
+		for(unsigned int i=0;i<32;i++){
+			if((acks >> (31-i)) & 1){
+				peerAcks.push_back(ackId-(i+1));
 			}
-			/*if(remoteAcks[i+1]==0){
-				if((acks >> (31-i)) & 1){
-					remoteAcks[i+1]=GetCurrentTime();
-					conctl->PacketAcknowledged(ackId-(i+1));
-				}
-			}*/
 		}
-		for(i=0;i<queuedPackets.size();i++){
-			QueuedPacket& qp=queuedPackets[i];
-			int j;
-			bool didAck=false;
-			for(j=0;j<16;j++){
-				LOGD("queued packet %u, seq %u=%u", i, j, qp.seqs[j]);
-				if(qp.seqs[j]==0)
-					break;
-				int remoteAcksIndex=lastRemoteAckSeq-qp.seqs[j];
-				//LOGV("remote acks index %u, value %f", remoteAcksIndex, remoteAcksIndex>=0 && remoteAcksIndex<32 ? remoteAcks[remoteAcksIndex] : -1);
-				if(seqgt(lastRemoteAckSeq, qp.seqs[j]) && remoteAcksIndex>=0 && remoteAcksIndex<32){
-					for(RecentOutgoingPacket& opkt:recentOutgoingPackets){
-						if(opkt.seq==qp.seqs[j] && opkt.ackTime>0){
-							LOGD("did ack seq %u, removing", qp.seqs[j]);
-							didAck=true;
-							break;
+
+		for(RecentOutgoingPacket& opkt:recentOutgoingPackets){
+			if(opkt.ackTime!=0.0)
+				continue;
+			if(find(peerAcks.begin(), peerAcks.end(), opkt.seq)!=peerAcks.end()){
+				opkt.ackTime=GetCurrentTime();
+				if(opkt.lost){
+					LOGW("acknowledged lost packet %u", opkt.seq);
+					sendLosses--;
+				}
+				if(opkt.sender && !opkt.lost){ // don't report lost packets as acknowledged to PacketSenders
+					opkt.sender->PacketAcknowledged(opkt.seq, opkt.sendTime, recvTS/1000.0f, opkt.type, opkt.size);
+				}
+
+				// TODO move this to a PacketSender
+				conctl->PacketAcknowledged(opkt.seq);
+			}
+		}
+
+		if(peerVersion<6){
+			for(unsigned int i=0; i<queuedPackets.size(); i++){
+				QueuedPacket &qp=queuedPackets[i];
+				int j;
+				bool didAck=false;
+				for(j=0; j<16; j++){
+					LOGD("queued packet %u, seq %u=%u", i, j, qp.seqs[j]);
+					if(qp.seqs[j]==0)
+						break;
+					int remoteAcksIndex=lastRemoteAckSeq-qp.seqs[j];
+					//LOGV("remote acks index %u, value %f", remoteAcksIndex, remoteAcksIndex>=0 && remoteAcksIndex<32 ? remoteAcks[remoteAcksIndex] : -1);
+					if(seqgt(lastRemoteAckSeq, qp.seqs[j]) && remoteAcksIndex>=0 && remoteAcksIndex<32){
+						for(RecentOutgoingPacket &opkt:recentOutgoingPackets){
+							if(opkt.seq==qp.seqs[j] && opkt.ackTime>0){
+								LOGD("did ack seq %u, removing", qp.seqs[j]);
+								didAck=true;
+								break;
+							}
 						}
-					}
-					if(didAck)
-						break;
-				}
-			}
-			if(didAck){
-				queuedPackets.erase(queuedPackets.begin()+i);
-				i--;
-				continue;
-			}
-		}
-		for(vector<UnacknowledgedExtraData>::iterator x=currentExtras.begin();x!=currentExtras.end();){
-			if(x->firstContainingSeq!=0 && (lastRemoteAckSeq==x->firstContainingSeq || seqgt(lastRemoteAckSeq, x->firstContainingSeq))){
-				LOGV("Peer acknowledged extra type %u length %lu", x->type, x->data.Length());
-				ProcessAcknowledgedOutgoingExtra(*x);
-				x=currentExtras.erase(x);
-				continue;
-			}
-			++x;
-		}
-		if(videoSource && !videoKeyframeRequested){
-			// video frames are stored in sentVideoFrames in order of increasing numbers
-			// so if a frame (or part of it) is acknowledged but isn't sentVideoFrames[0], we know there was a packet loss
-			MutexGuard m(sentVideoFramesMutex);
-			for(SentVideoFrame& f:sentVideoFrames){
-				for(vector<uint32_t>::iterator s=f.unacknowledgedPackets.begin(); s!=f.unacknowledgedPackets.end();){
-					RecentOutgoingPacket* opkt=GetRecentOutgoingPacket(*s);
-					if(opkt && opkt->ackTime!=0.0){
-						s=f.unacknowledgedPackets.erase(s);
-						newlyAckedVideoBytes+=opkt->size;
-					}else{
-						++s;
+						if(didAck)
+							break;
 					}
 				}
-			}
-			bool first=true;
-			for(vector<SentVideoFrame>::iterator f=sentVideoFrames.begin();f!=sentVideoFrames.end();){
-				if(f->unacknowledgedPackets.empty() && f->fragmentsInQueue==0){
-					//LOGV("Video frame %u was acknowledged", f->num);
-					if(first){
-						f=sentVideoFrames.erase(f);
-						continue;
-					}else{
-						LOGE("!!!!!!!!!!!!!!11 VIDEO FRAME LOSS DETECTED [1] %u of %u fragments", sentVideoFrames[0].unacknowledgedPackets.size(), sentVideoFrames[0].fragmentCount);
-						videoPacketLossCount++;
-						videoKeyframeRequested=true;
-						videoSource->RequestKeyFrame();
-						break;
-					}
-				}else if(first){
-					first=false;
-				}else if(!first && f->unacknowledgedPackets.size()<f->fragmentCount){
-					LOGE("!!!!!!!!!!!!!!11 VIDEO FRAME LOSS DETECTED [2] %u of %u fragments", f->unacknowledgedPackets.size(), f->fragmentCount);
-					videoPacketLossCount++;
-					videoKeyframeRequested=true;
-					videoSource->RequestKeyFrame();
-					break;
+				if(didAck){
+					queuedPackets.erase(queuedPackets.begin()+i);
+					i--;
+					continue;
 				}
-				++f;
+			}
+		}else{
+			for(vector<UnacknowledgedExtraData>::iterator x=currentExtras.begin(); x!=currentExtras.end();){
+				if(x->firstContainingSeq!=0 && (lastRemoteAckSeq==x->firstContainingSeq || seqgt(lastRemoteAckSeq, x->firstContainingSeq))){
+					LOGV("Peer acknowledged extra type %u length %u", x->type, (unsigned int)x->data.Length());
+					ProcessAcknowledgedOutgoingExtra(*x);
+					x=currentExtras.erase(x);
+					continue;
+				}
+				++x;
 			}
 		}
 	}
@@ -2193,38 +2272,12 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 		}
 	}
 
-	if(pflags & XPFLAG_HAS_EXTRA){
-		unsigned char extraCount=in.ReadByte();
-		for(int i=0;i<extraCount;i++){
-			size_t extraLen=in.ReadByte();
-			Buffer xbuffer(extraLen);
-			in.ReadBytes(*xbuffer, extraLen);
-			ProcessExtraData(xbuffer);
-		}
-	}
-
-	if(pflags & XPFLAG_HAS_RECV_TS){
-		uint32_t recvTS=static_cast<uint32_t>(in.ReadInt32());
-		if(didAckNewPackets){
-			//LOGV("recv ts %u", recvTS);
-            for(RecentOutgoingPacket& opkt:recentOutgoingPackets){
-            	if(opkt.seq==lastRemoteAckSeq){
-                    float sendTime=(float)(opkt.sendTime-connectionInitTime);
-                    float recvTime=(float)recvTS/1000.0f;
-                    float oneWayDelay=recvTime-sendTime;
-                    //LOGV("one-way delay: %f", oneWayDelay);
-                    videoCongestionControl.ProcessAcks(oneWayDelay, newlyAckedVideoBytes, videoPacketLossCount, rttHistory.Average(5));
-            		break;
-            	}
-            }
-		}
-	}
 
 	if(config.logPacketStats){
 		DebugLoggedPacket dpkt={
 				static_cast<int32_t>(pseq),
 				GetCurrentTime()-connectionInitTime,
-				static_cast<int32_t>(packet.length)
+				static_cast<int32_t>(packet.data.Length())
 		};
 		debugLoggedPackets.push_back(dpkt);
 		if(debugLoggedPackets.size()>=2500){
@@ -2232,8 +2285,14 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 		}
 	}
 
+	unacknowledgedIncomingPacketCount++;
+	if(unacknowledgedIncomingPacketCount>unackNopThreshold){
+		//LOGV("Sending nop packet as ack");
+		SendNopPacket();
+	}
+
 #ifdef LOG_PACKETS
-	LOGV("Received: from=%s:%u, seq=%u, length=%u, type=%s", srcEndpoint.GetAddress().ToString().c_str(), srcEndpoint.port, pseq, packet.length, GetPacketTypeString(type).c_str());
+	LOGV("Received: from=%s:%u, seq=%u, length=%u, type=%s", srcEndpoint.GetAddress().ToString().c_str(), srcEndpoint.port, pseq, (unsigned int)packet.data.Length(), GetPacketTypeString(type).c_str());
 #endif
 
 	//LOGV("acks: %u -> %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf", lastRemoteAckSeq, remoteAcks[0], remoteAcks[1], remoteAcks[2], remoteAcks[3], remoteAcks[4], remoteAcks[5], remoteAcks[6], remoteAcks[7]);
@@ -2288,7 +2347,7 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 				char* _id=reinterpret_cast<char*>(&id);
 				LOGD("%c%c%c%c", _id[3], _id[2], _id[1], _id[0]);
 			}
-			peerMaxVideoResolution=in.ReadByte();
+			protocolInfo.maxVideoResolution=in.ReadByte();
 
 			SetupOutgoingVideoStream();
 		}
@@ -2390,7 +2449,7 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 				}else if(stm->type==STREAM_TYPE_VIDEO){
 					if(!stm->packetReassembler){
 						stm->packetReassembler=make_shared<PacketReassembler>();
-						stm->packetReassembler->SetCallback(bind(&VoIPController::ProcessIncomingVideoFrame, this, placeholders::_1, placeholders::_2, placeholders::_3));
+						stm->packetReassembler->SetCallback(bind(&VoIPController::ProcessIncomingVideoFrame, this, placeholders::_1, placeholders::_2, placeholders::_3, placeholders::_4));
 					}
 				}else{
 					LOGW("Unknown incoming stream type: %d", stm->type);
@@ -2497,9 +2556,34 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 				}
 			}else if(stm && stm->type==STREAM_TYPE_VIDEO){
 				if(stm->packetReassembler){
+					uint8_t frameSeq=in.ReadByte();
 					Buffer pdata(sdlen);
+					uint16_t rotation=0;
+					if(fragmentIndex==0){
+						unsigned char _rotation=in.ReadByte() & (unsigned char)VIDEO_ROTATION_MASK;
+						switch(_rotation){
+							case VIDEO_ROTATION_0:
+								rotation=0;
+								break;
+							case VIDEO_ROTATION_90:
+								rotation=90;
+								break;
+							case VIDEO_ROTATION_180:
+								rotation=180;
+								break;
+							case VIDEO_ROTATION_270:
+								rotation=270;
+								break;
+							default: // unreachable on sane CPUs
+								abort();
+						}
+						//if(rotation!=stm->rotation){
+						//	stm->rotation=rotation;
+						//	LOGI("Video rotation: %u", rotation);
+						//}
+					}
 					pdata.CopyFrom(buffer+in.GetOffset(), 0, sdlen);
-					stm->packetReassembler->AddFragment(std::move(pdata), fragmentIndex, fragmentCount, pts, keyframe);
+					stm->packetReassembler->AddFragment(std::move(pdata), fragmentIndex, fragmentCount, pts, frameSeq, keyframe, rotation);
 				}
 				//LOGV("Received video fragment %u of %u", fragmentIndex, fragmentCount);
 			}else{
@@ -2534,7 +2618,7 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 			if(pingSeq==srcEndpoint.lastPingSeq){
 				srcEndpoint.rtts.Add(GetCurrentTime()-srcEndpoint.lastPingTime);
 				srcEndpoint.averageRTT=srcEndpoint.rtts.NonZeroAverage();
-				LOGD("Current RTT via %s: %.3f, average: %.3f", packet.address->ToString().c_str(), srcEndpoint.rtts[0], srcEndpoint.averageRTT);
+				LOGD("Current RTT via %s: %.3f, average: %.3f", packet.address.ToString().c_str(), srcEndpoint.rtts[0], srcEndpoint.averageRTT);
 				if(srcEndpoint.averageRTT>rateMaxAcceptableRTT)
 					needRate=true;
 			}
@@ -2556,15 +2640,14 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 		LOGV("received lan endpoint");
 		uint32_t peerAddr=(uint32_t) in.ReadInt32();
 		uint16_t peerPort=(uint16_t) in.ReadInt32();
-		MutexGuard m(endpointsMutex);
 		constexpr int64_t lanID=(int64_t)(FOURCC('L','A','N','4')) << 32;
-		IPv4Address v4addr(peerAddr);
-		IPv6Address v6addr(string("::0"));
 		unsigned char peerTag[16];
-		Endpoint lan(lanID, peerPort, v4addr, v6addr, Endpoint::Type::UDP_P2P_LAN, peerTag);
+		Endpoint lan(lanID, peerPort, NetworkAddress::IPv4(peerAddr), NetworkAddress::Empty(), Endpoint::Type::UDP_P2P_LAN, peerTag);
 
 		if(currentEndpoint==lanID)
 			currentEndpoint=preferredRelay;
+
+		MutexGuard m(endpointsMutex);
 		endpoints[lanID]=lan;
 	}
 	if(type==PKT_NETWORK_CHANGED && _currentEndpoint->type!=Endpoint::Type::UDP_RELAY && _currentEndpoint->type!=Endpoint::Type::TCP_RELAY){
@@ -2581,20 +2664,46 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 	}
 	if(type==PKT_STREAM_EC){
 		unsigned char streamID=in.ReadByte();
-		uint32_t lastTimestamp=(uint32_t)in.ReadInt32();
-		unsigned char count=in.ReadByte();
-		for(shared_ptr<Stream>& stm:incomingStreams){
-			if(stm->id==streamID){
-				for(unsigned int i=0;i<count;i++){
-					unsigned char dlen=in.ReadByte();
-					unsigned char data[256];
-					in.ReadBytes(data, dlen);
-					if(stm->jitterBuffer){
-						stm->jitterBuffer->HandleInput(data, dlen, lastTimestamp-(count-i-1)*stm->frameDuration, true);
+		if(peerVersion<7){
+			uint32_t lastTimestamp=(uint32_t) in.ReadInt32();
+			unsigned char count=in.ReadByte();
+			for(shared_ptr<Stream> &stm:incomingStreams){
+				if(stm->id==streamID){
+					for(unsigned int i=0; i<count; i++){
+						unsigned char dlen=in.ReadByte();
+						unsigned char data[256];
+						in.ReadBytes(data, dlen);
+						if(stm->jitterBuffer){
+							stm->jitterBuffer->HandleInput(data, dlen, lastTimestamp-(count-i-1)*stm->frameDuration, true);
+						}
 					}
+					break;
 				}
-				break;
 			}
+		}else{
+			shared_ptr<Stream> stm=GetStreamByID(streamID, false);
+			if(!stm){
+				LOGW("Received FEC packet for unknown stream %u", streamID);
+				return;
+			}
+			if(stm->type!=STREAM_TYPE_VIDEO){
+				LOGW("Received FEC packet for non-video stream %u", streamID);
+				return;
+			}
+			if(!stm->packetReassembler)
+				return;
+
+            uint8_t fseq=in.ReadByte();
+			unsigned char fecScheme=in.ReadByte();
+			unsigned char prevFrameCount=in.ReadByte();
+			uint16_t fecLen=(uint16_t)in.ReadInt16();
+			if(fecLen>in.Remaining())
+				return;
+
+			Buffer fecData(fecLen);
+			in.ReadBytes(fecData);
+
+			stm->packetReassembler->AddFEC(std::move(fecData), fseq, prevFrameCount, fecScheme);
 		}
 	}
 }
@@ -2617,7 +2726,9 @@ void VoIPController::ProcessExtraData(Buffer &data){
 		for(shared_ptr<Stream>& s:incomingStreams){
 			if(s->id==id){
 				bool prevEnabled=s->enabled;
+				bool prevPaused=s->paused;
 				s->enabled=(flags & STREAM_FLAG_ENABLED)==STREAM_FLAG_ENABLED;
+				s->paused=(flags & STREAM_FLAG_PAUSED)==STREAM_FLAG_PAUSED;
 				if(flags & STREAM_FLAG_EXTRA_EC){
 					if(!s->extraECEnabled){
 						s->extraECEnabled=true;
@@ -2633,6 +2744,8 @@ void VoIPController::ProcessExtraData(Buffer &data){
 				}
 				if(prevEnabled!=s->enabled && s->type==STREAM_TYPE_VIDEO && videoRenderer)
 					videoRenderer->SetStreamEnabled(s->enabled);
+				if(prevPaused!=s->paused && s->type==STREAM_TYPE_VIDEO && videoRenderer)
+					videoRenderer->SetStreamPaused(s->paused);
 				UpdateAudioOutputState();
 				break;
 			}
@@ -2673,15 +2786,13 @@ void VoIPController::ProcessExtraData(Buffer &data){
 		LOGV("received lan endpoint (extra)");
 		uint32_t peerAddr=(uint32_t) in.ReadInt32();
 		uint16_t peerPort=(uint16_t) in.ReadInt32();
-		MutexGuard m(endpointsMutex);
 		constexpr int64_t lanID=(int64_t)(FOURCC('L','A','N','4')) << 32;
 		if(currentEndpoint==lanID)
 			currentEndpoint=preferredRelay;
 
-		IPv4Address v4addr(peerAddr);
-		IPv6Address v6addr(string("::0"));
 		unsigned char peerTag[16];
-		Endpoint lan(lanID, peerPort, v4addr, v6addr, Endpoint::Type::UDP_P2P_LAN, peerTag);
+		Endpoint lan(lanID, peerPort, NetworkAddress::IPv4(peerAddr), NetworkAddress::Empty(), Endpoint::Type::UDP_P2P_LAN, peerTag);
+		MutexGuard m(endpointsMutex);
 		endpoints[lanID]=lan;
 	}else if(type==EXTRA_TYPE_NETWORK_CHANGED){
 		LOGI("Peer network changed");
@@ -2719,9 +2830,8 @@ void VoIPController::ProcessExtraData(Buffer &data){
 			return;
 		unsigned char _addr[16];
 		in.ReadBytes(_addr, 16);
-		IPv6Address addr(_addr);
+		NetworkAddress addr=NetworkAddress::IPv6(_addr);
 		uint16_t port=static_cast<uint16_t>(in.ReadInt16());
-		MutexGuard m(endpointsMutex);
 		peerIPv6Available=true;
 		LOGV("Received peer IPv6 endpoint [%s]:%u", addr.ToString().c_str(), port);
 
@@ -2769,13 +2879,14 @@ Endpoint* VoIPController::GetEndpointForPacket(const PendingOutgoingPacket& pkt)
 	return endpoint;
 }
 
-bool VoIPController::SendOrEnqueuePacket(PendingOutgoingPacket pkt, bool enqueue){
+bool VoIPController::SendOrEnqueuePacket(PendingOutgoingPacket pkt, bool enqueue, PacketSender* source){
+	ENFORCE_MSG_THREAD;
+
 	Endpoint* endpoint=GetEndpointForPacket(pkt);
 	if(!endpoint){
 		abort();
 		return false;
 	}
-	
 
 	bool canSend;
 	if(endpoint->type!=Endpoint::Type::TCP_RELAY){
@@ -2784,14 +2895,14 @@ bool VoIPController::SendOrEnqueuePacket(PendingOutgoingPacket pkt, bool enqueue
 		if(!endpoint->socket){
 			LOGV("Connecting to %s:%u", endpoint->GetAddress().ToString().c_str(), endpoint->port);
 			if(proxyProtocol==PROXY_NONE){
-				endpoint->socket=new NetworkSocketTCPObfuscated(NetworkSocket::Create(NetworkProtocol::PROTO_TCP));
-				endpoint->socket->Connect(&endpoint->GetAddress(), endpoint->port);
+				endpoint->socket=make_shared<NetworkSocketTCPObfuscated>(NetworkSocket::Create(NetworkProtocol::TCP));
+				endpoint->socket->Connect(endpoint->GetAddress(), endpoint->port);
 			}else if(proxyProtocol==PROXY_SOCKS5){
-				NetworkSocket* tcp=NetworkSocket::Create(NetworkProtocol::PROTO_TCP);
+				NetworkSocket* tcp=NetworkSocket::Create(NetworkProtocol::TCP);
 				tcp->Connect(resolvedProxyAddress, proxyPort);
-				NetworkSocketSOCKS5Proxy* proxy=new NetworkSocketSOCKS5Proxy(tcp, NULL, proxyUsername, proxyPassword);
+				shared_ptr<NetworkSocketSOCKS5Proxy> proxy=make_shared<NetworkSocketSOCKS5Proxy>(tcp, nullptr, proxyUsername, proxyPassword);
 				endpoint->socket=proxy;
-				endpoint->socket->Connect(&endpoint->GetAddress(), endpoint->port);
+				endpoint->socket->Connect(endpoint->GetAddress(), endpoint->port);
 			}
 			selectCanceller->CancelSelect();
 		}
@@ -2807,7 +2918,7 @@ bool VoIPController::SendOrEnqueuePacket(PendingOutgoingPacket pkt, bool enqueue
 	if((endpoint->type==Endpoint::Type::TCP_RELAY && useTCP) || (endpoint->type!=Endpoint::Type::TCP_RELAY && useUDP)){
 		//BufferOutputStream p(buf, sizeof(buf));
 		BufferOutputStream p(1500);
-		WritePacketHeader(pkt.seq, &p, pkt.type, (uint32_t)pkt.len);
+		WritePacketHeader(pkt.seq, &p, pkt.type, (uint32_t)pkt.len, source);
 		p.WriteBytes(pkt.data);
 		SendPacket(p.GetBuffer(), p.GetLength(), *endpoint, pkt);
 		if(pkt.type==PKT_STREAM_DATA){
@@ -2887,30 +2998,39 @@ void VoIPController::SendPacket(unsigned char *data, size_t len, Endpoint& ep, P
 	}
 	//LOGV("Sending %d bytes to %s:%d", out.GetLength(), ep.address.ToString().c_str(), ep.port);
 #ifdef LOG_PACKETS
-	LOGV("Sending: to=%s:%u, seq=%u, length=%u, type=%s", ep.GetAddress().ToString().c_str(), ep.port, srcPacket.seq, out.GetLength(), GetPacketTypeString(srcPacket.type).c_str());
+	LOGV("Sending: to=%s:%u, seq=%u, length=%u, type=%s", ep.GetAddress().ToString().c_str(), ep.port, srcPacket.seq, (unsigned int)out.GetLength(), GetPacketTypeString(srcPacket.type).c_str());
 #endif
 
-	NetworkPacket pkt={0};
-	pkt.address=&ep.GetAddress();
-	pkt.port=ep.port;
-	pkt.length=out.GetLength();
-	pkt.data=out.GetBuffer();
-	pkt.protocol=ep.type==Endpoint::Type::TCP_RELAY ? PROTO_TCP : PROTO_UDP;
-	ActuallySendPacket(pkt, ep);
+
+	/*ActuallySendPacket(NetworkPacket{
+			Buffer(std::move(out)),
+			ep.GetAddress(),
+			ep.port,
+			ep.type==Endpoint::Type::TCP_RELAY ? NetworkProtocol::TCP : NetworkProtocol::UDP
+		}, ep);*/
+	rawSendQueue.Put(RawPendingOutgoingPacket{
+			NetworkPacket{
+					Buffer(std::move(out)),
+					ep.GetAddress(),
+					ep.port,
+					ep.type==Endpoint::Type::TCP_RELAY ? NetworkProtocol::TCP : NetworkProtocol::UDP
+			},
+			ep.type==Endpoint::Type::TCP_RELAY ? ep.socket : nullptr
+	});
 }
 
-void VoIPController::ActuallySendPacket(NetworkPacket &pkt, Endpoint& ep){
+void VoIPController::ActuallySendPacket(NetworkPacket pkt, Endpoint& ep){
 	//LOGI("Sending packet of %d bytes", pkt.length);
 	if(IS_MOBILE_NETWORK(networkType))
-		stats.bytesSentMobile+=(uint64_t)pkt.length;
+		stats.bytesSentMobile+=(uint64_t)pkt.data.Length();
 	else
-		stats.bytesSentWifi+=(uint64_t)pkt.length;
+		stats.bytesSentWifi+=(uint64_t)pkt.data.Length();
 	if(ep.type==Endpoint::Type::TCP_RELAY){
 		if(ep.socket && !ep.socket->IsFailed()){
-			ep.socket->Send(&pkt);
+			ep.socket->Send(std::move(pkt));
 		}
 	}else{
-		udpSocket->Send(&pkt);
+		udpSocket->Send(std::move(pkt));
 	}
 }
 
@@ -2973,19 +3093,20 @@ std::string VoIPController::GetPacketTypeString(unsigned char type){
 }
 
 void VoIPController::AddIPv6Relays(){
+
 	if(!myIPv6.IsEmpty() && !didAddIPv6Relays){
 		unordered_map<string, vector<Endpoint>> endpointsByAddress;
-		MutexGuard m(endpointsMutex);
 		for(pair<const int64_t, Endpoint>& _e:endpoints){
 			Endpoint& e=_e.second;
 			if((e.type==Endpoint::Type::UDP_RELAY || e.type==Endpoint::Type::TCP_RELAY) && !e.v6address.IsEmpty() && !e.address.IsEmpty()){
 				endpointsByAddress[e.v6address.ToString()].push_back(e);
 			}
 		}
+		MutexGuard m(endpointsMutex);
 		for(pair<const string, vector<Endpoint>>& addr:endpointsByAddress){
 			for(Endpoint& e:addr.second){
 				didAddIPv6Relays=true;
-				e.address=IPv4Address(0);
+				e.address=NetworkAddress::Empty();
 				e.id=e.id ^ ((int64_t)(FOURCC('I','P','v','6')) << 32);
 				e.averageRTT=0;
 				e.lastPingSeq=0;
@@ -3000,10 +3121,10 @@ void VoIPController::AddIPv6Relays(){
 }
 
 void VoIPController::AddTCPRelays(){
+
 	if(!didAddTcpRelays){
 		bool wasSetCurrentToTCP=setCurrentEndpointToTCP;
 		LOGV("Adding TCP relays");
-		MutexGuard m(endpointsMutex);
 		vector<Endpoint> relays;
 		for(pair<const int64_t, Endpoint> &_e:endpoints){
 			Endpoint& e=_e.second;
@@ -3030,6 +3151,7 @@ void VoIPController::AddTCPRelays(){
 			}
 			relays.push_back(tcpRelay);
 		}
+		MutexGuard m(endpointsMutex);
 		for(Endpoint& e:relays){
 			endpoints[e.id]=move(e);
 		}
@@ -3134,16 +3256,15 @@ void VoIPController::SendPublicEndpointsRequest(const Endpoint& relay){
 	LOGD("Sending public endpoints request to %s:%d", relay.address.ToString().c_str(), relay.port);
 	publicEndpointsReqTime=GetCurrentTime();
 	waitingForRelayPeerInfo=true;
-	unsigned char buf[32];
-	memcpy(buf, relay.peerTag, 16);
-	memset(buf+16, 0xFF, 16);
-	NetworkPacket pkt={0};
-	pkt.data=buf;
-	pkt.length=32;
-	pkt.address=(NetworkAddress*)&relay.address;
-	pkt.port=relay.port;
-	pkt.protocol=PROTO_UDP;
-	udpSocket->Send(&pkt);
+	Buffer buf(32);
+	memcpy(*buf, relay.peerTag, 16);
+	memset(*buf+16, 0xFF, 16);
+	udpSocket->Send(NetworkPacket{
+		std::move(buf),
+		relay.address,
+		relay.port,
+		NetworkProtocol::UDP
+	});
 }
 
 Endpoint& VoIPController::GetEndpointByType(int type){
@@ -3158,6 +3279,8 @@ Endpoint& VoIPController::GetEndpointByType(int type){
 
 
 void VoIPController::SendPacketReliably(unsigned char type, unsigned char *data, size_t len, double retryInterval, double timeout){
+	ENFORCE_MSG_THREAD;
+
 	LOGD("Send reliably, type=%u, len=%u, retry=%.3f, timeout=%.3f", type, unsigned(len), retryInterval, timeout);
 	QueuedPacket pkt;
 	if(data){
@@ -3170,10 +3293,7 @@ void VoIPController::SendPacketReliably(unsigned char type, unsigned char *data,
 	pkt.timeout=timeout;
 	pkt.firstSentTime=0;
 	pkt.lastSentTime=0;
-	{
-		MutexGuard m(queuedPacketsMutex);
-		queuedPackets.push_back(move(pkt));
-	}
+	queuedPackets.push_back(move(pkt));
 	messageThread.Post(std::bind(&VoIPController::UpdateQueuedPackets, this));
 	if(timeout>0.0){
 		messageThread.Post(std::bind(&VoIPController::UpdateQueuedPackets, this), timeout);
@@ -3181,8 +3301,9 @@ void VoIPController::SendPacketReliably(unsigned char type, unsigned char *data,
 }
 
 void VoIPController::SendExtra(Buffer &data, unsigned char type){
-	MutexGuard m(queuedPacketsMutex);
-	LOGV("Sending extra type %u length %lu", type, data.Length());
+	ENFORCE_MSG_THREAD;
+
+	LOGV("Sending extra type %u length %lu", type, (unsigned int)data.Length());
 	for(vector<UnacknowledgedExtraData>::iterator x=currentExtras.begin();x!=currentExtras.end();++x){
 		if(x->type==type){
 			x->firstContainingSeq=0;
@@ -3199,29 +3320,7 @@ void VoIPController::SendExtra(Buffer &data, unsigned char type){
 
 
 void VoIPController::DebugCtl(int request, int param){
-	if(request==1){ // set bitrate
-		maxBitrate=param;
-		if(encoder){
-			encoder->SetBitrate(maxBitrate);
-		}
-	}else if(request==2){ // set packet loss
-		if(encoder){
-			encoder->SetPacketLoss(param);
-		}
-	}else if(request==3){ // force enable/disable p2p
-		allowP2p=param==1;
-		/*if(!allowP2p && currentEndpoint && currentEndpoint->type!=Endpoint::Type::UDP_RELAY){
-			currentEndpoint=preferredRelay;
-		}else if(allowP2p){
-			SendPublicEndpointsRequest();
-		}*/
-		BufferOutputStream s(4);
-		s.WriteInt32(dataSavingMode ? INIT_FLAG_DATA_SAVING_ENABLED : 0);
-		SendPacketReliably(PKT_NETWORK_CHANGED, s.GetBuffer(), s.GetLength(), 1, 20);
-	}else if(request==4){
-		if(echoCanceller)
-			echoCanceller->Enable(param==1);
-	}
+
 }
 
 void VoIPController::SendUdpPing(Endpoint& endpoint){
@@ -3236,26 +3335,29 @@ void VoIPController::SendUdpPing(Endpoint& endpoint){
 	int64_t id;
 	crypto.rand_bytes(reinterpret_cast<uint8_t*>(&id), 8);
 	p.WriteInt64(id);
-	NetworkPacket pkt={0};
-	pkt.address=&endpoint.GetAddress();
-	pkt.port=endpoint.port;
-	pkt.protocol=PROTO_UDP;
-	pkt.data=p.GetBuffer();
-	pkt.length=p.GetLength();
-	udpSocket->Send(&pkt);
+	endpoint.udpPingTimes[id]=GetCurrentTime();
+	udpSocket->Send(NetworkPacket{
+		Buffer(std::move(p)),
+		endpoint.GetAddress(),
+		endpoint.port,
+		NetworkProtocol::UDP
+	});
+	endpoint.totalUdpPings++;
 	LOGV("Sending UDP ping to %s:%d, id %" PRId64, endpoint.GetAddress().ToString().c_str(), endpoint.port, id);
 }
 
 
 void VoIPController::ResetUdpAvailability(){
+	ENFORCE_MSG_THREAD;
+
 	LOGI("Resetting UDP availability");
 	if(udpPingTimeoutID!=MessageThread::INVALID_ID){
 		messageThread.Cancel(udpPingTimeoutID);
 	}
 	{
-		MutexGuard m(endpointsMutex);
 		for(pair<const int64_t, Endpoint>& e:endpoints){
 			e.second.udpPongCount=0;
+			e.second.udpPingTimes.clear();
 		}
 	}
 	udpPingCount=0;
@@ -3264,7 +3366,8 @@ void VoIPController::ResetUdpAvailability(){
 }
 
 void VoIPController::ResetEndpointPingStats(){
-	MutexGuard m(endpointsMutex);
+	ENFORCE_MSG_THREAD;
+
 	for(pair<const int64_t, Endpoint>& e:endpoints){
 		e.second.averageRTT=0.0;
 		e.second.rtts.Reset();
@@ -3275,62 +3378,32 @@ void VoIPController::ResetEndpointPingStats(){
 
 #pragma mark - Video
 
-int VoIPController::GetVideoResolutionForCurrentBitrate(){
-	shared_ptr<Stream> stm=GetStreamByType(STREAM_TYPE_VIDEO, true);
-	if(!stm)
-		return INIT_VIDEO_RES_NONE;
-
-	int resolutionFromBitrate=INIT_VIDEO_RES_1080;
-	// TODO: probably move this to server config
-	if(stm->codec==CODEC_AVC || stm->codec==CODEC_VP8){
-		if(currentVideoBitrate>400000){
-			resolutionFromBitrate=INIT_VIDEO_RES_720;
-		}else if(currentVideoBitrate>250000){
-			resolutionFromBitrate=INIT_VIDEO_RES_480;
-		}else{
-			resolutionFromBitrate=INIT_VIDEO_RES_360;
-		}
-	}else if(stm->codec==CODEC_HEVC || stm->codec==CODEC_VP9){
-		if(currentVideoBitrate>400000){
-			resolutionFromBitrate=INIT_VIDEO_RES_1080;
-		}else if(currentVideoBitrate>250000){
-			resolutionFromBitrate=INIT_VIDEO_RES_720;
-		}else if(currentVideoBitrate>100000){
-			resolutionFromBitrate=INIT_VIDEO_RES_480;
-		}else{
-			resolutionFromBitrate=INIT_VIDEO_RES_360;
-		}
-	}
-	return min(peerMaxVideoResolution, resolutionFromBitrate);
-}
 
 void VoIPController::SetVideoSource(video::VideoSource *source){
-	if(videoSource){
-		videoSource->Stop();
-		videoSource->SetCallback(nullptr);
-	}
-	videoSource=source;
 	shared_ptr<Stream> stm=GetStreamByType(STREAM_TYPE_VIDEO, true);
 	if(!stm){
 		LOGE("Can't set video source when there is no outgoing video stream");
 		return;
 	}
-	if(videoSource){
+
+	if(source){
 		if(!stm->enabled){
 			stm->enabled=true;
-			SendStreamFlags(*stm);
+			messageThread.Post([this, stm]{SendStreamFlags(*stm);});
 		}
-		uint32_t bitrate=videoCongestionControl.GetBitrate();
-		currentVideoBitrate=bitrate;
-		videoSource->SetBitrate(bitrate);
-		videoSource->Reset(stm->codec, stm->resolution=GetVideoResolutionForCurrentBitrate());
-		videoSource->Start();
-		videoSource->SetCallback(bind(&VoIPController::SendVideoFrame, this, placeholders::_1, placeholders::_2));
-		lastVideoResolutionChangeTime=GetCurrentTime();
+
+		if(!videoPacketSender)
+			videoPacketSender=new video::VideoPacketSender(this, source, stm);
+		else
+			videoPacketSender->SetSource(source);
+
 	}else{
 		if(stm->enabled){
 			stm->enabled=false;
-			SendStreamFlags(*stm);
+			messageThread.Post([this, stm]{SendStreamFlags(*stm);});
+		}
+		if(videoPacketSender){
+			videoPacketSender->SetSource(NULL);
 		}
 	}
 }
@@ -3347,145 +3420,64 @@ void VoIPController::SetVideoCodecSpecificData(const std::vector<Buffer>& data){
 	LOGI("Set outgoing video stream CSD");
 }
 
-void VoIPController::SendVideoFrame(const Buffer &frame, uint32_t flags){
+void VoIPController::SendVideoFrame(const Buffer &frame, uint32_t flags, uint32_t rotation){
 	//LOGI("Send video frame %u flags %u", (unsigned int)frame.Length(), flags);
 	shared_ptr<Stream> stm=GetStreamByType(STREAM_TYPE_VIDEO, true);
 	if(stm){
-		if(firstVideoFrameTime==0.0)
-			firstVideoFrameTime=GetCurrentTime();
-
-		videoCongestionControl.UpdateMediaRate(static_cast<uint32_t>(frame.Length()));
-		uint32_t bitrate=videoCongestionControl.GetBitrate();
-		if(bitrate!=currentVideoBitrate){
-			currentVideoBitrate=bitrate;
-			LOGD("Setting video bitrate to %u", bitrate);
-			videoSource->SetBitrate(bitrate);
-
-			int resolutionFromBitrate=GetVideoResolutionForCurrentBitrate();
-			if(resolutionFromBitrate!=stm->resolution && GetCurrentTime()-lastVideoResolutionChangeTime>3.0){
-				LOGI("Changing video resolution: %d -> %d", stm->resolution, resolutionFromBitrate);
-				stm->resolution=resolutionFromBitrate;
-				messageThread.Post([this, stm, resolutionFromBitrate]{
-    				videoSource->Reset(stm->codec, resolutionFromBitrate);
-    				stm->csdIsValid=false;
-				});
-				lastVideoResolutionChangeTime=GetCurrentTime();
-				return;
-			}
-		}
-
-		if(videoKeyframeRequested){
-			if(flags & VIDEO_FRAME_FLAG_KEYFRAME){
-				for(SentVideoFrame& f:sentVideoFrames){
-					if(!f.unacknowledgedPackets.empty()){
-						for(uint32_t& pseq:f.unacknowledgedPackets){
-							RecentOutgoingPacket* opkt=GetRecentOutgoingPacket(pseq);
-							if(opkt){
-								videoCongestionControl.ProcessPacketLost(opkt->size);
-							}
-						}
-					}
-				}
-				sentVideoFrames.clear();
-				videoKeyframeRequested=false;
-			}else{
-				LOGV("Dropping input video frame waiting for key frame");
-				return;
-			}
-		}
-
-		uint32_t pts=videoFrameCount++;
-		if(!stm->csdIsValid){
-			vector<Buffer>& csd=videoSource->GetCodecSpecificData();
-			stm->codecSpecificData.clear();
-			for(Buffer& b:csd){
-				stm->codecSpecificData.push_back(Buffer::CopyOf(b));
-			}
-			stm->csdIsValid=true;
-			stm->width=videoSource->GetFrameWidth();
-			stm->height=videoSource->GetFrameHeight();
-			SendStreamCSD(*stm);
-		}
-
-		size_t segmentCount=frame.Length()/1024;
-		if(frame.Length()%1024>0)
-			segmentCount++;
-		SentVideoFrame sentFrame;
-		sentFrame.num=pts;
-		sentFrame.fragmentCount=static_cast<uint32_t>(segmentCount);
-		sentFrame.fragmentsInQueue=0;//static_cast<uint32_t>(segmentCount);
-		for(size_t seg=0;seg<segmentCount;seg++){
-			BufferOutputStream pkt(1500);
-			size_t offset=seg*1024;
-			size_t len=MIN(1024, frame.Length()-offset);
-			unsigned char pflags=STREAM_DATA_FLAG_LEN16;
-			//pflags |= STREAM_DATA_FLAG_HAS_MORE_FLAGS;
-			pkt.WriteByte((unsigned char) (stm->id | pflags)); // streamID + flags
-			int16_t lengthAndFlags=static_cast<int16_t>(len & 0x7FF);
-			if(segmentCount>1)
-				lengthAndFlags |= STREAM_DATA_XFLAG_FRAGMENTED;
-			if(flags & VIDEO_FRAME_FLAG_KEYFRAME)
-				lengthAndFlags |= STREAM_DATA_XFLAG_KEYFRAME;
-			pkt.WriteInt16(lengthAndFlags);
-			//pkt.WriteInt32(audioTimestampOut);
-			pkt.WriteInt32(pts);
-			if(segmentCount>1){
-				pkt.WriteByte((unsigned char)seg);
-				pkt.WriteByte((unsigned char)segmentCount);
-			}
-			//LOGV("Sending segment %u of %u", (unsigned int)seg, (unsigned int)segmentCount);
-			pkt.WriteBytes(frame, offset, len);
-
-			uint32_t seq=GenerateOutSeq();
-			PendingOutgoingPacket p{
-					/*.seq=*/seq,
-					/*.type=*/PKT_STREAM_DATA,
-					/*.len=*/pkt.GetLength(),
-					/*.data=*/Buffer(move(pkt)),
-					/*.endpoint=*/0,
-			};
-			unsentStreamPackets++;
-			SendOrEnqueuePacket(move(p));
-			videoCongestionControl.ProcessPacketSent(static_cast<unsigned int>(pkt.GetLength()));
-			sentFrame.unacknowledgedPackets.push_back(seq);
-		}
-		MutexGuard m(sentVideoFramesMutex);
-		sentVideoFrames.push_back(sentFrame);
 	}
 }
 
-void VoIPController::SendStreamCSD(VoIPController::Stream &stream){
-	assert(stream.csdIsValid);
 
-	BufferOutputStream os(256);
-	os.WriteByte(stream.id);
-	os.WriteInt16((int16_t)stream.width);
-	os.WriteInt16((int16_t)stream.height);
-	os.WriteByte(static_cast<unsigned char>(stream.codecSpecificData.size()));
-	for(Buffer& b:stream.codecSpecificData){
-		assert(b.Length()<255);
-		os.WriteByte(static_cast<unsigned char>(b.Length()));
-		os.WriteBytes(b);
-	}
-	Buffer buf(move(os));
-	SendExtra(buf, EXTRA_TYPE_STREAM_CSD);
-}
-
-void VoIPController::ProcessIncomingVideoFrame(Buffer frame, uint32_t pts, bool keyframe){
+void VoIPController::ProcessIncomingVideoFrame(Buffer frame, uint32_t pts, bool keyframe, uint16_t rotation){
 	//LOGI("Incoming video frame size %u pts %u", (unsigned int)frame.Length(), pts);
 	if(frame.Length()==0){
 		LOGE("EMPTY FRAME");
 	}
 	if(videoRenderer){
 		shared_ptr<Stream> stm=GetStreamByType(STREAM_TYPE_VIDEO, false);
-		if(!stm->csdIsValid){
+		size_t offset=0;
+		if(keyframe){
+			BufferInputStream in(frame);
+			uint16_t width=(uint16_t)in.ReadInt16();
+			uint16_t height=(uint16_t)in.ReadInt16();
+			uint8_t sizeAndFlag=in.ReadByte();
+			int size=sizeAndFlag & 0x0F;
+			bool reset=(sizeAndFlag & 0x80)==0x80;
+			if(reset || !stm->csdIsValid || stm->width!=width || stm->height!=height){
+				stm->width=width;
+				stm->height=height;
+				stm->codecSpecificData.clear();
+				for(int i=0; i<size; i++){
+					size_t len=in.ReadByte();
+					Buffer b(len);
+					in.ReadBytes(b);
+					stm->codecSpecificData.push_back(move(b));
+				}
+				stm->csdIsValid=false;
+			}else{
+				for(int i=0; i<size; i++){
+					size_t len=in.ReadByte();
+					in.Seek(in.GetOffset()+len);
+				}
+			}
+			offset=in.GetOffset();
+		}
+		if(!stm->csdIsValid && stm->width && stm->height){
 			videoRenderer->Reset(stm->codec, stm->width, stm->height, stm->codecSpecificData);
 			stm->csdIsValid=true;
 		}
 		if(lastReceivedVideoFrameNumber==UINT32_MAX || lastReceivedVideoFrameNumber==pts-1 || keyframe){
 			lastReceivedVideoFrameNumber=pts;
 			//LOGV("3 before decode %u", (unsigned int)frame.Length());
-			videoRenderer->DecodeAndDisplay(move(frame), pts);
+			if(stm->rotation!=rotation){
+				stm->rotation=rotation;
+				videoRenderer->SetRotation(rotation);
+			}
+			if(offset==0){
+				videoRenderer->DecodeAndDisplay(move(frame), pts);
+			}else{
+				videoRenderer->DecodeAndDisplay(Buffer::CopyOf(frame, offset, frame.Length()-offset), pts);
+			}
 		}else{
 			LOGW("Skipping non-keyframe after packet loss...");
 		}
@@ -3517,7 +3509,8 @@ void VoIPController::SetupOutgoingVideoStream(){
 
 void VoIPController::SendUdpPings(){
 	LOGW("Send udp pings");
-	MutexGuard m(endpointsMutex);
+    ENFORCE_MSG_THREAD;
+
 	for(pair<const int64_t, Endpoint>& e:endpoints){
 		if(e.second.type==Endpoint::Type::UDP_RELAY){
 			SendUdpPing(e.second);
@@ -3591,7 +3584,8 @@ void VoIPController::EvaluateUdpPingResults(){
 }
 
 void VoIPController::SendRelayPings(){
-	MutexGuard m(endpointsMutex);
+    ENFORCE_MSG_THREAD;
+
 	if((state==STATE_ESTABLISHED || state==STATE_RECONNECTING) && endpoints.size()>1){
 		Endpoint* _preferredRelay=&endpoints.at(preferredRelay);
 		Endpoint* _currentEndpoint=&endpoints.at(currentEndpoint);
@@ -3812,14 +3806,14 @@ void VoIPController::UpdateSignalBars(){
 	if(state==STATE_RECONNECTING || waitingForAcks)
 		signalBarCount=1;
 	if(endpoints.at(currentEndpoint).type==Endpoint::Type::TCP_RELAY){
-		signalBarCount=MIN(signalBarCount, 3);
+		signalBarCount=std::min(signalBarCount, 3);
 	}
 	if(avgSendLossCount>0.1){
 		signalBarCount=1;
 	}else if(avgSendLossCount>0.0625){
-		signalBarCount=MIN(signalBarCount, 2);
+		signalBarCount=std::min(signalBarCount, 2);
 	}else if(avgSendLossCount>0.025){
-		signalBarCount=MIN(signalBarCount, 3);
+		signalBarCount=std::min(signalBarCount, 3);
 	}
 
 	for(shared_ptr<Stream>& stm:incomingStreams){
@@ -3829,7 +3823,7 @@ void VoIPController::UpdateSignalBars(){
 			if(avgLateCount[2]>=0.2)
 				signalBarCount=1;
 			else if(avgLateCount[2]>=0.1)
-				signalBarCount=MIN(signalBarCount, 2);
+				signalBarCount=std::min(signalBarCount, 2);
 		}
 	}
 
@@ -3845,35 +3839,32 @@ void VoIPController::UpdateSignalBars(){
 
 void VoIPController::UpdateQueuedPackets(){
 	vector<PendingOutgoingPacket> packetsToSend;
-	{
-		MutexGuard m(queuedPacketsMutex);
-		for(std::vector<QueuedPacket>::iterator qp=queuedPackets.begin(); qp!=queuedPackets.end();){
-			if(qp->timeout>0 && qp->firstSentTime>0 && GetCurrentTime()-qp->firstSentTime>=qp->timeout){
-				LOGD("Removing queued packet because of timeout");
-				qp=queuedPackets.erase(qp);
-				continue;
-			}
-			if(GetCurrentTime()-qp->lastSentTime>=qp->retryInterval){
-				messageThread.Post(std::bind(&VoIPController::UpdateQueuedPackets, this), qp->retryInterval);
-				uint32_t seq=GenerateOutSeq();
-				qp->seqs.Add(seq);
-				qp->lastSentTime=GetCurrentTime();
-				//LOGD("Sending queued packet, seq=%u, type=%u, len=%u", seq, qp.type, qp.data.Length());
-				Buffer buf(qp->data.Length());
-				if(qp->firstSentTime==0)
-					qp->firstSentTime=qp->lastSentTime;
-				if(qp->data.Length())
-					buf.CopyFrom(qp->data, qp->data.Length());
-				packetsToSend.push_back(PendingOutgoingPacket{
-						/*.seq=*/seq,
-						/*.type=*/qp->type,
-						/*.len=*/qp->data.Length(),
-						/*.data=*/move(buf),
-						/*.endpoint=*/0
-				});
-			}
-			++qp;
+	for(std::vector<QueuedPacket>::iterator qp=queuedPackets.begin(); qp!=queuedPackets.end();){
+		if(qp->timeout>0 && qp->firstSentTime>0 && GetCurrentTime()-qp->firstSentTime>=qp->timeout){
+			LOGD("Removing queued packet because of timeout");
+			qp=queuedPackets.erase(qp);
+			continue;
 		}
+		if(GetCurrentTime()-qp->lastSentTime>=qp->retryInterval){
+			messageThread.Post(std::bind(&VoIPController::UpdateQueuedPackets, this), qp->retryInterval);
+			uint32_t seq=GenerateOutSeq();
+			qp->seqs.Add(seq);
+			qp->lastSentTime=GetCurrentTime();
+			//LOGD("Sending queued packet, seq=%u, type=%u, len=%u", seq, qp.type, qp.data.Length());
+			Buffer buf(qp->data.Length());
+			if(qp->firstSentTime==0)
+				qp->firstSentTime=qp->lastSentTime;
+			if(qp->data.Length())
+				buf.CopyFrom(qp->data, qp->data.Length());
+			packetsToSend.push_back(PendingOutgoingPacket{
+					/*.seq=*/seq,
+					/*.type=*/qp->type,
+					/*.len=*/qp->data.Length(),
+					/*.data=*/move(buf),
+					/*.endpoint=*/0
+			});
+		}
+		++qp;
 	}
 	for(PendingOutgoingPacket& pkt:packetsToSend){
 		SendOrEnqueuePacket(move(pkt));
@@ -3893,10 +3884,10 @@ void VoIPController::SendNopPacket(){
 }
 
 void VoIPController::SendPublicEndpointsRequest(){
+	ENFORCE_MSG_THREAD;
 	if(!allowP2p)
 		return;
 	LOGI("Sending public endpoints request");
-	MutexGuard m(endpointsMutex);
 	for(pair<const int64_t, Endpoint>& e:endpoints){
 		if(e.second.type==Endpoint::Type::UDP_RELAY && !e.second.IsIPv6Only()){
 			SendPublicEndpointsRequest(e.second);
@@ -3915,7 +3906,7 @@ void VoIPController::SendPublicEndpointsRequest(){
 	}
 }
 
-void VoIPController::TickJitterBufferAngCongestionControl(){
+void VoIPController::TickJitterBufferAndCongestionControl(){
 	// TODO get rid of this and update states of these things internally and retroactively
 	for(shared_ptr<Stream>& stm:incomingStreams){
 		if(stm->jitterBuffer){
@@ -3925,11 +3916,30 @@ void VoIPController::TickJitterBufferAngCongestionControl(){
 	if(conctl){
 		conctl->Tick();
 	}
+
+	//MutexGuard m(queuedPacketsMutex);
+	double currentTime=GetCurrentTime();
+	double rtt=GetAverageRTT();
+	double packetLossTimeout=std::max(rtt*2.0, 0.1);
+	for(RecentOutgoingPacket& pkt:recentOutgoingPackets){
+		if(pkt.ackTime!=0.0 || pkt.lost)
+			continue;
+		if(currentTime-pkt.sendTime>packetLossTimeout){
+			pkt.lost=true;
+			sendLosses++;
+			LOGW("Outgoing packet lost: seq=%u, type=%s, size=%u", pkt.seq, GetPacketTypeString(pkt.type).c_str(), (unsigned int)pkt.size);
+			if(pkt.sender){
+				pkt.sender->PacketLost(pkt.seq, pkt.type, pkt.size);
+			}else if(pkt.type==PKT_STREAM_DATA){
+				conctl->PacketLost(pkt.seq);
+			}
+		}
+	}
 }
 
 #pragma mark - Endpoint
 
-Endpoint::Endpoint(int64_t id, uint16_t port, const IPv4Address& _address, const IPv6Address& _v6address, Type type, unsigned char peerTag[16]) : address(_address), v6address(_v6address){
+Endpoint::Endpoint(int64_t id, uint16_t port, const IPv4Address& _address, const IPv6Address& _v6address, Type type, unsigned char peerTag[16]) : address(NetworkAddress::IPv4(_address.addr)), v6address(NetworkAddress::IPv6(_v6address.addr)){
 	this->id=id;
 	this->port=port;
 	this->type=type;
@@ -3944,7 +3954,22 @@ Endpoint::Endpoint(int64_t id, uint16_t port, const IPv4Address& _address, const
 	udpPongCount=0;
 }
 
-Endpoint::Endpoint() : address(0), v6address(string("::0")) {
+Endpoint::Endpoint(int64_t id, uint16_t port, const NetworkAddress _address, const NetworkAddress _v6address, Type type, unsigned char peerTag[16]) : address(_address), v6address(_v6address){
+	this->id=id;
+	this->port=port;
+	this->type=type;
+	memcpy(this->peerTag, peerTag, 16);
+	if(type==Type::UDP_RELAY && ServerConfig::GetSharedInstance()->GetBoolean("force_tcp", false))
+		this->type=Type::TCP_RELAY;
+
+	lastPingSeq=0;
+	lastPingTime=0;
+	averageRTT=0;
+	socket=NULL;
+	udpPongCount=0;
+}
+
+Endpoint::Endpoint() : address(NetworkAddress::Empty()), v6address(NetworkAddress::Empty()){
 	lastPingSeq=0;
 	lastPingTime=0;
 	averageRTT=0;
@@ -3964,10 +3989,20 @@ bool Endpoint::IsIPv6Only() const{
 	return address.IsEmpty() && !v6address.IsEmpty();
 }
 
+int64_t Endpoint::CleanID() const{
+	int64_t _id=id;
+	if(type==Type::TCP_RELAY){
+		_id=_id ^ ((int64_t)FOURCC('T','C','P',' ') << 32);
+	}
+	if(IsIPv6Only()){
+		_id=_id ^ ((int64_t)FOURCC('I','P','v','6') << 32);
+	}
+	return _id;
+}
+
 Endpoint::~Endpoint(){
 	if(socket){
 		socket->Close();
-		delete socket;
 	}
 }
 
@@ -3985,17 +4020,9 @@ AudioInputTester::AudioInputTester(std::string deviceID) : deviceID(deviceID){
 		return 0;
 	}, this);
 	input->Start();
-	/*thread=new MessageThread();
-	thread->Start();
-	thread->Post([this]{
-		this->callback(maxSample/(float)INT16_MAX);
-		maxSample=0;
-	}, updateInterval, updateInterval);*/
 }
 
 AudioInputTester::~AudioInputTester(){
-	//thread->Stop();
-	//delete thread;
 	input->Stop();
 	delete io;
 }

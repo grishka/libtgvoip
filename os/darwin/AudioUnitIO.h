@@ -11,6 +11,7 @@
 #include <AudioToolbox/AudioToolbox.h>
 #include "../../threading.h"
 #include <string>
+#include <atomic>
 #include "../../audio/AudioIO.h"
 
 namespace tgvoip{ namespace audio{
@@ -46,8 +47,8 @@ class AudioOutputAudioUnit;
 		AudioInputAudioUnit* input;
 		AudioOutputAudioUnit* output;
 		AudioBufferList inBufferList;
-		bool inputEnabled;
-		bool outputEnabled;
+		std::atomic<bool> inputEnabled;
+		std::atomic<bool> outputEnabled;
 		bool started;
 	};
 }}

@@ -40,12 +40,10 @@ tgvoip::OpusDecoder::OpusDecoder(MediaStreamItf* dst, bool isAsync, bool needEC)
 void tgvoip::OpusDecoder::Initialize(bool isAsync, bool needEC){
 	async=isAsync;
 	if(async){
-		decodedQueue=new BlockingQueue<unsigned char*>(33);
-		bufferPool=new BufferPool(PACKET_SIZE, 32);
+		decodedQueue=new BlockingQueue<Buffer>(33);
 		semaphore=new Semaphore(32, 0);
 	}else{
 		decodedQueue=NULL;
-		bufferPool=NULL;
 		semaphore=NULL;
 	}
 	dec=opus_decoder_create(48000, 1, NULL);
@@ -75,8 +73,6 @@ tgvoip::OpusDecoder::~OpusDecoder(){
 	if(ecDec)
 		opus_decoder_destroy(ecDec);
 	free(buffer);
-	if(bufferPool)
-		delete bufferPool;
 	if(decodedQueue)
 		delete decodedQueue;
 	if(semaphore)
@@ -110,11 +106,10 @@ size_t tgvoip::OpusDecoder::HandleCallback(unsigned char *data, size_t len){
 		}
 		assert(outputBufferSize==len && "output buffer size is supposed to be the same throughout callbacks");
 		if(len==PACKET_SIZE){
-			lastDecoded=(unsigned char *) decodedQueue->GetBlocking();
-			if(!lastDecoded)
+			Buffer lastDecoded=decodedQueue->GetBlocking();
+			if(lastDecoded.IsEmpty())
 				return 0;
-			memcpy(data, lastDecoded, PACKET_SIZE);
-			bufferPool->Reuse(lastDecoded);
+			memcpy(data, *lastDecoded, PACKET_SIZE);
 			semaphore->Release();
 			if(silentPacketCount>0){
 				silentPacketCount--;
@@ -184,19 +179,19 @@ void tgvoip::OpusDecoder::RunThread(){
 				LOGI("==== decoder exiting ====");
 				return;
 			}
-			unsigned char *buf=bufferPool->Get();
-			if(buf){
+			try{
+				Buffer buf=bufferPool.Get();
 				if(remainingDataLen>0){
 					for(effects::AudioEffect*& effect:postProcEffects){
 						effect->Process(reinterpret_cast<int16_t*>(processedBuffer+(PACKET_SIZE*i)), 960);
 					}
-					memcpy(buf, processedBuffer+(PACKET_SIZE*i), PACKET_SIZE);
+					buf.CopyFrom(processedBuffer+(PACKET_SIZE*i), 0, PACKET_SIZE);
 				}else{
 					//LOGE("Error decoding, result=%d", size);
-					memset(buf, 0, PACKET_SIZE);
+					memset(*buf, 0, PACKET_SIZE);
 				}
-				decodedQueue->Put(buf);
-			}else{
+				decodedQueue->Put(std::move(buf));
+			}catch(std::bad_alloc& x){
 				LOGW("decoder: no buffers left!");
 			}
 		}

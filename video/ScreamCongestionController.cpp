@@ -19,7 +19,7 @@ namespace{
 	/*static*/ constexpr uint32_t MIN_CWND=3000; // bytes
 	/*static*/ constexpr float MAX_BYTES_IN_FLIGHT_HEAD_ROOM=1.1f;
 	/*static*/ constexpr float GAIN=1.0f;
-	/*static*/ constexpr float BETA_LOSS=0.8f;
+	/*static*/ constexpr float BETA_LOSS=0.9f;
 	/*static*/ constexpr float BETA_ECN=0.9f;
 	/*static*/ constexpr float BETA_R=0.9f;
 	/*static*/ constexpr uint32_t MSS=1024;
@@ -186,12 +186,12 @@ void ScreamCongestionController::ProcessAcks(float oneWayDelay, uint32_t bytesNe
     	if(lossCount>prevLossCount && currentTime>ignoreLossesUntil){
     		LOGD("Scream: loss detected");
     		ignoreLossesUntil=currentTime+rtt;
+    		LOGD("ignoring losses for %f", rtt);
     		inFastIncrease=false;
     		cwnd=std::max(MIN_CWND, (uint32_t)(cwnd*BETA_LOSS));
     		AdjustQDelayTarget(qdelay);
 			CalculateSendWindow(qdelay);
 			lossPending=true;
-			prevLossCount=lossCount;
 			lastTimeQDelayTrendWasGreaterThanLo=currentTime;
     	}else{
     		this->bytesNewlyAcked+=bytesNewlyAcked;
@@ -209,6 +209,7 @@ void ScreamCongestionController::ProcessAcks(float oneWayDelay, uint32_t bytesNe
     			}
     		}
     	}
+		prevLossCount=lossCount;
     }
     prevOneWayDelay=oneWayDelay;
 }

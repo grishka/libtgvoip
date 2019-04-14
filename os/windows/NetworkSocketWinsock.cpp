@@ -20,7 +20,7 @@
 
 using namespace tgvoip;
 
-NetworkSocketWinsock::NetworkSocketWinsock(NetworkProtocol protocol) : NetworkSocket(protocol), lastRecvdV4(0), lastRecvdV6("::0"){
+NetworkSocketWinsock::NetworkSocketWinsock(NetworkProtocol protocol) : NetworkSocket(protocol){
 	needUpdateNat64Prefix=true;
 	nat64Present=false;
 	switchToV6at=0;
@@ -38,35 +38,29 @@ NetworkSocketWinsock::NetworkSocketWinsock(NetworkProtocol protocol) : NetworkSo
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 	LOGD("Initialized winsock, version %d.%d", wsaData.wHighVersion, wsaData.wVersion);
-	tcpConnectedAddress=NULL;
 
-	if(protocol==PROTO_TCP)
+	if(protocol==NetworkProtocol::TCP)
 		timeout=10.0;
 	lastSuccessfulOperationTime=VoIPController::GetCurrentTime();
 }
 
 NetworkSocketWinsock::~NetworkSocketWinsock(){
-	if(tcpConnectedAddress)
-		delete tcpConnectedAddress;
-	if(pendingOutgoingPacket)
-		delete pendingOutgoingPacket;
 }
 
 void NetworkSocketWinsock::SetMaxPriority(){
 	
 }
 
-void NetworkSocketWinsock::Send(NetworkPacket *packet){
-	if(!packet || (protocol==PROTO_UDP && !packet->address)){
+void NetworkSocketWinsock::Send(NetworkPacket packet){
+	if(packet.IsEmpty() || (protocol==NetworkProtocol::UDP && packet.address.IsEmpty())){
 		LOGW("tried to send null packet");
 		return;
 	}
 	int res;
-	if(protocol==PROTO_UDP){
-		IPv4Address *v4addr=dynamic_cast<IPv4Address *>(packet->address);
+	if(protocol==NetworkProtocol::UDP){
 		if(isAtLeastVista){
 			sockaddr_in6 addr;
-			if(v4addr){
+			if(!packet.address.isIPv6){
 				if(needUpdateNat64Prefix && !isV4Available && VoIPController::GetCurrentTime()>switchToV6at && switchToV6at!=0){
 					LOGV("Updating NAT64 prefix");
 					nat64Present=false;
@@ -106,39 +100,36 @@ void NetworkSocketWinsock::Send(NetworkPacket *packet){
 				}
 				memset(&addr, 0, sizeof(sockaddr_in6));
 				addr.sin6_family=AF_INET6;
-				*((uint32_t *) &addr.sin6_addr.s6_addr[12])=v4addr->GetAddress();
+				*((uint32_t *) &addr.sin6_addr.s6_addr[12])=packet.address.addr.ipv4;
 				if(nat64Present)
 					memcpy(addr.sin6_addr.s6_addr, nat64Prefix, 12);
 				else
 					addr.sin6_addr.s6_addr[11]=addr.sin6_addr.s6_addr[10]=0xFF;
 
 			}else{
-				IPv6Address *v6addr=dynamic_cast<IPv6Address *>(packet->address);
-				assert(v6addr!=NULL);
-				memcpy(addr.sin6_addr.s6_addr, v6addr->GetAddress(), 16);
+				memcpy(addr.sin6_addr.s6_addr, packet.address.addr.ipv6, 16);
 			}
-			addr.sin6_port=htons(packet->port);
-			res=sendto(fd, (const char*)packet->data, packet->length, 0, (const sockaddr *) &addr, sizeof(addr));
-		}else if(v4addr){
+			addr.sin6_port=htons(packet.port);
+			res=sendto(fd, (const char*)*packet.data, packet.data.Length(), 0, (const sockaddr *) &addr, sizeof(addr));
+		}else{
 			sockaddr_in addr;
-			addr.sin_addr.s_addr=v4addr->GetAddress();
-			addr.sin_port=htons(packet->port);
+			addr.sin_addr.s_addr=packet.address.addr.ipv4;
+			addr.sin_port=htons(packet.port);
 			addr.sin_family=AF_INET;
-			res=sendto(fd, (const char*)packet->data, packet->length, 0, (const sockaddr*)&addr, sizeof(addr));
+			res=sendto(fd, (const char*)*packet.data, packet.data.Length(), 0, (const sockaddr*)&addr, sizeof(addr));
 		}
 	}else{
-		res=send(fd, (const char*)packet->data, packet->length, 0);
+		res=send(fd, (const char*)*packet.data, packet.data.Length(), 0);
 	}
 	if(res==SOCKET_ERROR){
 		int error=WSAGetLastError();
 		if(error==WSAEWOULDBLOCK){
-			if(pendingOutgoingPacket){
+			if(!pendingOutgoingPacket.IsEmpty()){
 				LOGE("Got EAGAIN but there's already a pending packet");
 				failed=true;
 			}else{
 				LOGV("Socket %d not ready to send", fd);
-				pendingOutgoingPacket=new Buffer(packet->length);
-				pendingOutgoingPacket->CopyFrom(packet->data, 0, packet->length);
+				pendingOutgoingPacket=std::move(packet);
 				readyToSend=false;
 			}
 		}else{
@@ -148,94 +139,96 @@ void NetworkSocketWinsock::Send(NetworkPacket *packet){
 				LOGI("Network unreachable, trying NAT64");
 			}
 		}
-	}else if(res<packet->length && protocol==PROTO_TCP){
-		if(pendingOutgoingPacket){
+	}else if(res<packet.data.Length() && protocol==NetworkProtocol::TCP){
+		if(!pendingOutgoingPacket.IsEmpty()){
 			LOGE("send returned less than packet length but there's already a pending packet");
 			failed=true;
 		}else{
 			LOGV("Socket %d not ready to send", fd);
-			pendingOutgoingPacket=new Buffer(packet->length-res);
-			pendingOutgoingPacket->CopyFrom(packet->data+res, 0, packet->length-res);
+			pendingOutgoingPacket=std::move(packet);
+			Buffer pdata=std::move(pendingOutgoingPacket.data);
+			pendingOutgoingPacket.data=Buffer::CopyOf(pdata, res, pdata.Length()-res);
 			readyToSend=false;
 		}
 	}
 }
 
 bool NetworkSocketWinsock::OnReadyToSend(){
-	if(pendingOutgoingPacket){
-		NetworkPacket pkt={0};
-		pkt.data=**pendingOutgoingPacket;
-		pkt.length=pendingOutgoingPacket->Length();
-		Send(&pkt);
-		delete pendingOutgoingPacket;
-		pendingOutgoingPacket=NULL;
+	if(!pendingOutgoingPacket.IsEmpty()){
+		Send(std::move(pendingOutgoingPacket));
+		pendingOutgoingPacket=std::move(NetworkPacket::Empty());
 		return false;
 	}
 	readyToSend=true;
 	return true;
 }
 
-void NetworkSocketWinsock::Receive(NetworkPacket *packet){
-	if(protocol==PROTO_UDP){
+NetworkPacket NetworkSocketWinsock::Receive(size_t maxLen){
+	if(maxLen==0)
+		maxLen=UINT32_MAX;
+	if(protocol==NetworkProtocol::UDP){
 		if(isAtLeastVista){
 			int addrLen=sizeof(sockaddr_in6);
 			sockaddr_in6 srcAddr;
-			int res=recvfrom(fd, (char*)packet->data, packet->length, 0, (sockaddr *) &srcAddr, (socklen_t *) &addrLen);
-			if(res!=SOCKET_ERROR)
-				packet->length=(size_t) res;
-			else{
+			int res=recvfrom(fd, (char*)*recvBuf, std::min(recvBuf.Length(), maxLen), 0, (sockaddr *) &srcAddr, (socklen_t *) &addrLen);
+			if(res==SOCKET_ERROR){
 				int error=WSAGetLastError();
 				LOGE("error receiving %d / %s", error, WindowsSpecific::GetErrorMessage(error).c_str());
-				packet->length=0;
-				return;
+				return NetworkPacket::Empty();
 			}
 			//LOGV("Received %d bytes from %s:%d at %.5lf", len, inet_ntoa(srcAddr.sin_addr), ntohs(srcAddr.sin_port), GetCurrentTime());
 			if(!isV4Available && IN6_IS_ADDR_V4MAPPED(&srcAddr.sin6_addr)){
 				isV4Available=true;
 				LOGI("Detected IPv4 connectivity, will not try IPv6");
 			}
+			NetworkAddress addr=NetworkAddress::Empty();
 			if(IN6_IS_ADDR_V4MAPPED(&srcAddr.sin6_addr) || (nat64Present && memcmp(nat64Prefix, srcAddr.sin6_addr.s6_addr, 12)==0)){
 				in_addr v4addr=*((in_addr *) &srcAddr.sin6_addr.s6_addr[12]);
-				lastRecvdV4=IPv4Address(v4addr.s_addr);
-				packet->address=&lastRecvdV4;
+				addr=NetworkAddress::IPv4(v4addr.s_addr);
 			}else{
-				lastRecvdV6=IPv6Address(srcAddr.sin6_addr.s6_addr);
-				packet->address=&lastRecvdV6;
+				addr=NetworkAddress::IPv6(srcAddr.sin6_addr.s6_addr);
 			}
-			packet->port=ntohs(srcAddr.sin6_port);
+			return NetworkPacket{
+				Buffer::CopyOf(recvBuf, 0, (size_t)res),
+				addr,
+				ntohs(srcAddr.sin6_port),
+				NetworkProtocol::UDP
+			};
 		}else{
 			int addrLen=sizeof(sockaddr_in);
 			sockaddr_in srcAddr;
-			int res=recvfrom(fd, (char*)packet->data, packet->length, 0, (sockaddr *) &srcAddr, (socklen_t *) &addrLen);
-			if(res!=SOCKET_ERROR)
-				packet->length=(size_t) res;
-			else{
+			int res=recvfrom(fd, (char*)*recvBuf, std::min(recvBuf.Length(), maxLen), 0, (sockaddr *) &srcAddr, (socklen_t *) &addrLen);
+			if(res==SOCKET_ERROR){
 				LOGE("error receiving %d", WSAGetLastError());
-				packet->length=0;
-				return;
+				return NetworkPacket::Empty();
 			}
-			lastRecvdV4=IPv4Address(srcAddr.sin_addr.s_addr);
-			packet->address=&lastRecvdV4;
-			packet->port=ntohs(srcAddr.sin_port);
+			return NetworkPacket{
+				Buffer::CopyOf(recvBuf, 0, (size_t)res),
+				NetworkAddress::IPv4(srcAddr.sin_addr.s_addr),
+				ntohs(srcAddr.sin_port),
+				NetworkProtocol::UDP
+			};
 		}
-		packet->protocol=PROTO_UDP;
-	}else if(protocol==PROTO_TCP){
-		int res=recv(fd, (char*)packet->data, packet->length, 0);
+	}else if(protocol==NetworkProtocol::TCP){
+		int res=recv(fd, (char*)*recvBuf, std::min(recvBuf.Length(), maxLen), 0);
 		if(res==SOCKET_ERROR){
 			int error=WSAGetLastError();
 			LOGE("Error receiving from TCP socket: %d / %s", error, WindowsSpecific::GetErrorMessage(error).c_str());
 			failed=true;
+			return NetworkPacket::Empty();
 		}else{
-			packet->length=(size_t)res;
-			packet->address=tcpConnectedAddress;
-			packet->port=tcpConnectedPort;
-			packet->protocol=PROTO_TCP;
+			return NetworkPacket{
+				Buffer::CopyOf(recvBuf, 0, (size_t)res),
+				tcpConnectedAddress,
+				tcpConnectedPort,
+				NetworkProtocol::TCP
+			};
 		}
 	}
 }
 
 void NetworkSocketWinsock::Open(){
-	if(protocol==PROTO_UDP){
+	if(protocol==NetworkProtocol::UDP){
 		fd=socket(isAtLeastVista ? AF_INET6 : AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		if(fd==INVALID_SOCKET){
 			int error=WSAGetLastError();
@@ -332,7 +325,7 @@ void NetworkSocketWinsock::OnActiveInterfaceChanged(){
 	switchToV6at=VoIPController::GetCurrentTime()+ipv6Timeout;
 }
 
-std::string NetworkSocketWinsock::GetLocalInterfaceInfo(IPv4Address *v4addr, IPv6Address *v6addr){
+std::string NetworkSocketWinsock::GetLocalInterfaceInfo(NetworkAddress *v4addr, NetworkAddress *v6addr){
 #if WINAPI_FAMILY==WINAPI_FAMILY_PHONE_APP
 	Windows::Networking::Connectivity::ConnectionProfile^ profile=Windows::Networking::Connectivity::NetworkInformation::GetInternetConnectionProfile();
 	if(profile){
@@ -345,11 +338,11 @@ std::string NetworkSocketWinsock::GetLocalInterfaceInfo(IPv4Address *v4addr, IPv
 				if(v4addr && n->Type==Windows::Networking::HostNameType::Ipv4){
 					char buf[INET_ADDRSTRLEN];
 					WideCharToMultiByte(CP_UTF8, 0, n->RawName->Data(), -1, buf, sizeof(buf), NULL, NULL);
-					*v4addr=IPv4Address(buf);
+					*v4addr=NetworkAddress::IPv4(buf);
 				}else if(v6addr && n->Type==Windows::Networking::HostNameType::Ipv6){
 					char buf[INET6_ADDRSTRLEN];
 					WideCharToMultiByte(CP_UTF8, 0, n->RawName->Data(), -1, buf, sizeof(buf), NULL, NULL);
-					*v6addr=IPv6Address(buf);
+					*v6addr=NetworkAddress::IPv6(buf);
 				}
 			}
 		}
@@ -401,18 +394,18 @@ std::string NetworkSocketWinsock::GetLocalInterfaceInfo(IPv4Address *v4addr, IPv
 							if(current->Ipv4Metric>bestMetric){
 								bestMetric=current->Ipv4Metric;
 								bestName=std::string(current->AdapterName);
-								*v4addr=IPv4Address(ipv4->sin_addr.s_addr);
+								*v4addr=NetworkAddress::IPv4(ipv4->sin_addr.s_addr);
 							}
 						}else{
 							bestName=std::string(current->AdapterName);
-							*v4addr=IPv4Address(ipv4->sin_addr.s_addr);
+							*v4addr=NetworkAddress::IPv4(ipv4->sin_addr.s_addr);
 						}
 					}
 				}else if(addr->sa_family==AF_INET6 && v6addr){
 					sockaddr_in6* ipv6=(sockaddr_in6*)addr;
 					LOGV("-> V6: %s", V6AddressToString(ipv6->sin6_addr.s6_addr).c_str());
 					if(!IN6_IS_ADDR_LINKLOCAL(&ipv6->sin6_addr)){
-						*v6addr=IPv6Address(ipv6->sin6_addr.s6_addr);
+						*v6addr=NetworkAddress::IPv6(ipv6->sin6_addr.s6_addr);
 					}
 				}
 				curAddr=curAddr->Next;
@@ -505,31 +498,25 @@ void NetworkSocketWinsock::StringToV6Address(std::string address, unsigned char 
 	memcpy(out, addr.sin6_addr.s6_addr, 16);
 }
 
-void NetworkSocketWinsock::Connect(const NetworkAddress *address, uint16_t port){
-	const IPv4Address* v4addr=dynamic_cast<const IPv4Address*>(address);
-	const IPv6Address* v6addr=dynamic_cast<const IPv6Address*>(address);
+void NetworkSocketWinsock::Connect(const NetworkAddress address, uint16_t port){
 	sockaddr_in v4;
 	sockaddr_in6 v6;
 	sockaddr* addr=NULL;
 	size_t addrLen=0;
-	if(v4addr){
+	if(!address.isIPv6){
 		v4.sin_family=AF_INET;
-		v4.sin_addr.s_addr=v4addr->GetAddress();
+		v4.sin_addr.s_addr=address.addr.ipv4;
 		v4.sin_port=htons(port);
 		addr=reinterpret_cast<sockaddr*>(&v4);
 		addrLen=sizeof(v4);
-	}else if(v6addr){
+	}else{
 		v6.sin6_family=AF_INET6;
-		memcpy(v6.sin6_addr.s6_addr, v6addr->GetAddress(), 16);
+		memcpy(v6.sin6_addr.s6_addr, address.addr.ipv6, 16);
 		v6.sin6_flowinfo=0;
 		v6.sin6_scope_id=0;
 		v6.sin6_port=htons(port);
 		addr=reinterpret_cast<sockaddr*>(&v6);
 		addrLen=sizeof(v6);
-	}else{
-		LOGE("Unknown address type in TCP connect");
-		failed=true;
-		return;
 	}
 	fd=socket(addr->sa_family, SOCK_STREAM, IPPROTO_TCP);
 	if(fd==INVALID_SOCKET){
@@ -549,20 +536,20 @@ void NetworkSocketWinsock::Connect(const NetworkAddress *address, uint16_t port)
 	if(res!=0){
 		int error=WSAGetLastError();
 		if(error!=WSAEINPROGRESS && error!=WSAEWOULDBLOCK){
-			LOGW("error connecting TCP socket to %s:%u: %d / %s", address->ToString().c_str(), port, error, WindowsSpecific::GetErrorMessage(error).c_str());
+			LOGW("error connecting TCP socket to %s:%u: %d / %s", address.ToString().c_str(), port, error, WindowsSpecific::GetErrorMessage(error).c_str());
 			closesocket(fd);
 			failed=true;
 			return;
 		}
 	}
-	tcpConnectedAddress=v4addr ? (NetworkAddress*)new IPv4Address(*v4addr) : (NetworkAddress*)new IPv6Address(*v6addr);
+	tcpConnectedAddress=address;
 	tcpConnectedPort=port;
-	LOGI("successfully connected to %s:%d", tcpConnectedAddress->ToString().c_str(), tcpConnectedPort);
+	LOGI("successfully connected to %s:%d", tcpConnectedAddress.ToString().c_str(), tcpConnectedPort);
 }
 
-IPv4Address *NetworkSocketWinsock::ResolveDomainName(std::string name){
+NetworkAddress NetworkSocketWinsock::ResolveDomainName(std::string name){
 	addrinfo* addr0;
-	IPv4Address* ret=NULL;
+	NetworkAddress ret=NetworkAddress::Empty();
 	int res=getaddrinfo(name.c_str(), NULL, NULL, &addr0);
 	if(res!=0){
 		LOGW("Error updating NAT64 prefix: %d / %s", res, gai_strerror(res));
@@ -571,7 +558,7 @@ IPv4Address *NetworkSocketWinsock::ResolveDomainName(std::string name){
 		for(addrPtr=addr0;addrPtr;addrPtr=addrPtr->ai_next){
 			if(addrPtr->ai_family==AF_INET){
 				sockaddr_in* addr=(sockaddr_in*)addrPtr->ai_addr;
-				ret=new IPv4Address(addr->sin_addr.s_addr);
+				ret=NetworkAddress::IPv4(addr->sin_addr.s_addr);
 				break;
 			}
 		}
@@ -580,7 +567,7 @@ IPv4Address *NetworkSocketWinsock::ResolveDomainName(std::string name){
 	return ret;
 }
 
-NetworkAddress *NetworkSocketWinsock::GetConnectedAddress(){
+NetworkAddress NetworkSocketWinsock::GetConnectedAddress(){
 	return tcpConnectedAddress;
 }
 

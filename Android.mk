@@ -11,9 +11,11 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH)/../opus/include $(LOCAL_PATH)/../boringssl/inc
 
 ifeq ($(TARGET_ARCH_ABI),$(filter $(TARGET_ARCH_ABI),armeabi-v7a arm64-v8a))
 CC_NEON := cc.neon
+CPP_NEON := cpp.neon
 LOCAL_CFLAGS += -DWEBRTC_HAS_NEON
 else
 CC_NEON := cc
+CPP_NEON := cpp.neon
 endif
 
 LOCAL_CFLAGS += $(TGVOIP_ADDITIONAL_CFLAGS)
@@ -48,6 +50,10 @@ LOCAL_SRC_FILES := \
 ./video/VideoRenderer.cpp \
 ./video/VideoSource.cpp \
 ./video/ScreamCongestionController.cpp \
+./video/VideoPacketSender.cpp \
+./video/VideoFEC.cpp \
+./video/cm256/cm256.$(CPP_NEON) \
+./video/cm256/gf256.$(CPP_NEON) \
 ./os/android/VideoSourceAndroid.cpp \
 ./os/android/VideoRendererAndroid.cpp \
 ./client/android/tg_voip_jni.cpp
@@ -330,6 +336,9 @@ LOCAL_SRC_FILES += \
 ./webrtc_dsp/common_audio/signal_processing/downsample_fast_neon.c.neon \
 ./webrtc_dsp/common_audio/signal_processing/min_max_operations_neon.c.neon \
 ./webrtc_dsp/common_audio/signal_processing/cross_correlation_neon.c.neon
+
+LOCAL_CPPFLAGS += -DUSE_NEON
+
 endif
 
 ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
@@ -345,6 +354,9 @@ LOCAL_SRC_FILES += \
 ./webrtc_dsp/modules/audio_processing/utility/ooura_fft_sse2.cc \
 ./webrtc_dsp/common_audio/fir_filter_sse.cc \
 ./webrtc_dsp/common_audio/resampler/sinc_resampler_sse.cc
+
+LOCAL_CPPFLAGS += -DUSE_SSSE3
+
 endif
 
 include $(BUILD_STATIC_LIBRARY)

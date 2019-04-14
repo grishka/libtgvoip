@@ -21,6 +21,8 @@
 #ifdef __ANDROID__
 #include <jni.h>
 #include <sys/system_properties.h>
+#include <NetworkSocket.h>
+
 extern JavaVM* sharedJVM;
 extern jclass jniUtilitiesClass;
 #else
@@ -30,19 +32,17 @@ extern jclass jniUtilitiesClass;
 using namespace tgvoip;
 
 
-NetworkSocketPosix::NetworkSocketPosix(NetworkProtocol protocol) : NetworkSocket(protocol), lastRecvdV4(0), lastRecvdV6("::0"){
+NetworkSocketPosix::NetworkSocketPosix(NetworkProtocol protocol) : NetworkSocket(protocol){
 	needUpdateNat64Prefix=true;
 	nat64Present=false;
 	switchToV6at=0;
 	isV4Available=false;
     fd=-1;
-	useTCP=false;
 	closing=false;
 
-	tcpConnectedAddress=NULL;
 	tcpConnectedPort=0;
 
-	if(protocol==PROTO_TCP)
+	if(protocol==NetworkProtocol::TCP)
 		timeout=10.0;
 	lastSuccessfulOperationTime=VoIPController::GetCurrentTime();
 }
@@ -51,10 +51,6 @@ NetworkSocketPosix::~NetworkSocketPosix(){
 	if(fd>=0){
 		Close();
 	}
-	if(tcpConnectedAddress)
-		delete tcpConnectedAddress;
-	if(pendingOutgoingPacket)
-		delete pendingOutgoingPacket;
 }
 
 void NetworkSocketPosix::SetMaxPriority(){
@@ -80,16 +76,15 @@ void NetworkSocketPosix::SetMaxPriority(){
 #endif
 }
 
-void NetworkSocketPosix::Send(NetworkPacket *packet){
-	if(!packet || (protocol==PROTO_UDP && !packet->address)){
+void NetworkSocketPosix::Send(NetworkPacket packet){
+	if(packet.data.IsEmpty() || (protocol==NetworkProtocol::UDP && packet.port==0)){
 		LOGW("tried to send null packet");
 		return;
 	}
 	int res;
-	if(protocol==PROTO_UDP){
+	if(protocol==NetworkProtocol::UDP){
 		sockaddr_in6 addr;
-		IPv4Address *v4addr=dynamic_cast<IPv4Address *>(packet->address);
-		if(v4addr){
+		if(!packet.address.isIPv6){
 			if(needUpdateNat64Prefix && !isV4Available && VoIPController::GetCurrentTime()>switchToV6at && switchToV6at!=0){
 				LOGV("Updating NAT64 prefix");
 				nat64Present=false;
@@ -129,32 +124,29 @@ void NetworkSocketPosix::Send(NetworkPacket *packet){
 			}
 			memset(&addr, 0, sizeof(sockaddr_in6));
 			addr.sin6_family=AF_INET6;
-			*((uint32_t *) &addr.sin6_addr.s6_addr[12])=v4addr->GetAddress();
+			*((uint32_t *) &addr.sin6_addr.s6_addr[12])=packet.address.addr.ipv4;
 			if(nat64Present)
 				memcpy(addr.sin6_addr.s6_addr, nat64Prefix, 12);
 			else
 				addr.sin6_addr.s6_addr[11]=addr.sin6_addr.s6_addr[10]=0xFF;
 
 		}else{
-			IPv6Address *v6addr=dynamic_cast<IPv6Address *>(packet->address);
-			assert(v6addr!=NULL);
-			memcpy(addr.sin6_addr.s6_addr, v6addr->GetAddress(), 16);
+			memcpy(addr.sin6_addr.s6_addr, packet.address.addr.ipv6, 16);
 			addr.sin6_family=AF_INET6;
 		}
-		addr.sin6_port=htons(packet->port);
-		res=(int)sendto(fd, packet->data, packet->length, 0, (const sockaddr *) &addr, sizeof(addr));
+		addr.sin6_port=htons(packet.port);
+		res=(int)sendto(fd, *packet.data, packet.data.Length(), 0, (const sockaddr *) &addr, sizeof(addr));
 	}else{
-		res=(int)send(fd, packet->data, packet->length, 0);
+		res=(int)send(fd, *packet.data, packet.data.Length(), 0);
 	}
 	if(res<=0){
 		if(errno==EAGAIN || errno==EWOULDBLOCK){
-			if(pendingOutgoingPacket){
+			if(!pendingOutgoingPacket.IsEmpty()){
 				LOGE("Got EAGAIN but there's already a pending packet");
 				failed=true;
 			}else{
-				LOGV("Socket %d not ready to send", fd);
-				pendingOutgoingPacket=new Buffer(packet->length);
-				pendingOutgoingPacket->CopyFrom(packet->data, 0, packet->length);
+				LOGV("Socket %d not ready to send", (int)fd);
+				pendingOutgoingPacket=std::move(packet);
 				readyToSend=false;
 			}
 		}else{
@@ -164,81 +156,81 @@ void NetworkSocketPosix::Send(NetworkPacket *packet){
     			LOGI("Network unreachable, trying NAT64");
     		}
 		}
-	}else if((size_t)res!=packet->length && packet->protocol==PROTO_TCP){
-		if(pendingOutgoingPacket){
+	}else if((size_t)res!=packet.data.Length() && packet.protocol==NetworkProtocol::TCP){
+		if(!pendingOutgoingPacket.IsEmpty()){
 			LOGE("send returned less than packet length but there's already a pending packet");
 			failed=true;
 		}else{
-			LOGV("Socket %d not ready to send", fd);
-			pendingOutgoingPacket=new Buffer(packet->length-res);
-			pendingOutgoingPacket->CopyFrom(packet->data+res, 0, packet->length-res);
+			LOGV("Socket %d not ready to send", (int)fd);
+			pendingOutgoingPacket=std::move(packet);
 			readyToSend=false;
 		}
 	}
 }
 
 bool NetworkSocketPosix::OnReadyToSend(){
-	if(pendingOutgoingPacket){
-		NetworkPacket pkt={0};
-		pkt.data=**pendingOutgoingPacket;
-		pkt.length=pendingOutgoingPacket->Length();
-		Send(&pkt);
-		delete pendingOutgoingPacket;
-		pendingOutgoingPacket=NULL;
+	if(!pendingOutgoingPacket.IsEmpty()){
+		Send(std::move(pendingOutgoingPacket));
+		pendingOutgoingPacket=std::move(NetworkPacket::Empty());
 		return false;
 	}
 	readyToSend=true;
 	return true;
 }
 
-void NetworkSocketPosix::Receive(NetworkPacket *packet){
+NetworkPacket NetworkSocketPosix::Receive(size_t maxLen){
+	if(maxLen==0)
+		maxLen=INT32_MAX;
 	if(failed){
-		packet->length=0;
-		return;
+		return NetworkPacket::Empty();
 	}
-	if(protocol==PROTO_UDP){
+	if(protocol==NetworkProtocol::UDP){
 		int addrLen=sizeof(sockaddr_in6);
 		sockaddr_in6 srcAddr;
-		ssize_t len=recvfrom(fd, packet->data, packet->length, 0, (sockaddr *) &srcAddr, (socklen_t *) &addrLen);
-		if(len>0)
-			packet->length=(size_t) len;
-		else{
+		ssize_t len=recvfrom(fd, *recvBuffer, std::min(recvBuffer.Length(), maxLen), 0, (sockaddr *) &srcAddr, (socklen_t *) &addrLen);
+		if(len>0){
+			if(!isV4Available && IN6_IS_ADDR_V4MAPPED(&srcAddr.sin6_addr)){
+				isV4Available=true;
+				LOGI("Detected IPv4 connectivity, will not try IPv6");
+			}
+			NetworkAddress addr=NetworkAddress::Empty();
+			if(IN6_IS_ADDR_V4MAPPED(&srcAddr.sin6_addr) || (nat64Present && memcmp(nat64Prefix, srcAddr.sin6_addr.s6_addr, 12)==0)){
+				in_addr v4addr=*((in_addr *) &srcAddr.sin6_addr.s6_addr[12]);
+				addr=NetworkAddress::IPv4(v4addr.s_addr);
+			}else{
+				addr=NetworkAddress::IPv6(srcAddr.sin6_addr.s6_addr);
+			}
+			return NetworkPacket{
+				Buffer::CopyOf(recvBuffer, 0, (size_t)len),
+				addr,
+				ntohs(srcAddr.sin6_port),
+				NetworkProtocol::UDP
+			};
+		}else{
 			LOGE("error receiving %d / %s", errno, strerror(errno));
-			packet->length=0;
-			return;
+			return NetworkPacket::Empty();
 		}
 		//LOGV("Received %d bytes from %s:%d at %.5lf", len, inet_ntoa(srcAddr.sin_addr), ntohs(srcAddr.sin_port), GetCurrentTime());
-		if(!isV4Available && IN6_IS_ADDR_V4MAPPED(&srcAddr.sin6_addr)){
-			isV4Available=true;
-			LOGI("Detected IPv4 connectivity, will not try IPv6");
-		}
-		if(IN6_IS_ADDR_V4MAPPED(&srcAddr.sin6_addr) || (nat64Present && memcmp(nat64Prefix, srcAddr.sin6_addr.s6_addr, 12)==0)){
-			in_addr v4addr=*((in_addr *) &srcAddr.sin6_addr.s6_addr[12]);
-			lastRecvdV4=IPv4Address(v4addr.s_addr);
-			packet->address=&lastRecvdV4;
-		}else{
-			lastRecvdV6=IPv6Address(srcAddr.sin6_addr.s6_addr);
-			packet->address=&lastRecvdV6;
-		}
-		packet->protocol=PROTO_UDP;
-		packet->port=ntohs(srcAddr.sin6_port);
-	}else if(protocol==PROTO_TCP){
-		int res=(int)recv(fd, packet->data, packet->length, 0);
+	}else if(protocol==NetworkProtocol::TCP){
+		ssize_t res=(int)recv(fd, *recvBuffer, std::min(recvBuffer.Length(), maxLen), 0);
 		if(res<=0){
 			LOGE("Error receiving from TCP socket: %d / %s", errno, strerror(errno));
 			failed=true;
-			packet->length=0;
+			return NetworkPacket::Empty();
 		}else{
-			packet->length=(size_t)res;
-			packet->address=tcpConnectedAddress;
-			packet->port=tcpConnectedPort;
-			packet->protocol=PROTO_TCP;
+			return NetworkPacket{
+					Buffer::CopyOf(recvBuffer, 0, (size_t)res),
+					tcpConnectedAddress,
+					tcpConnectedPort,
+					NetworkProtocol::TCP
+			};
 		}
 	}
+	return NetworkPacket::Empty();
 }
 
 void NetworkSocketPosix::Open(){
-	if(protocol!=PROTO_UDP)
+	if(protocol!=NetworkProtocol::UDP)
 		return;
 	fd=socket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	if(fd<0){
@@ -255,7 +247,16 @@ void NetworkSocketPosix::Open(){
 	}
 
 	SetMaxPriority();
-	fcntl(fd, F_SETFL, O_NONBLOCK);
+	if(fcntl(fd, F_SETFL, O_NONBLOCK)==-1){
+		LOGE("error setting nonblock flag on socket: %d / %s", errno, strerror(errno));
+		failed=true;
+		return;
+	}
+
+#ifdef __APPLE__
+	flag=1;
+	setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(flag));
+#endif
 
 	int tries=0;
 	sockaddr_in6 addr;
@@ -293,6 +294,9 @@ void NetworkSocketPosix::Open(){
 }
 
 void NetworkSocketPosix::Close(){
+	if(closing){
+		return;
+	}
 	closing=true;
 	failed=true;
 	
@@ -303,31 +307,25 @@ void NetworkSocketPosix::Close(){
     }
 }
 
-void NetworkSocketPosix::Connect(const NetworkAddress *address, uint16_t port){
-	const IPv4Address* v4addr=dynamic_cast<const IPv4Address*>(address);
-	const IPv6Address* v6addr=dynamic_cast<const IPv6Address*>(address);
+void NetworkSocketPosix::Connect(const NetworkAddress address, uint16_t port){
 	struct sockaddr_in v4={0};
 	struct sockaddr_in6 v6={0};
 	struct sockaddr* addr=NULL;
 	size_t addrLen=0;
-	if(v4addr){
+	if(!address.isIPv6){
 		v4.sin_family=AF_INET;
-		v4.sin_addr.s_addr=v4addr->GetAddress();
+		v4.sin_addr.s_addr=address.addr.ipv4;
 		v4.sin_port=htons(port);
 		addr=reinterpret_cast<sockaddr*>(&v4);
 		addrLen=sizeof(v4);
-	}else if(v6addr){
+	}else{
 		v6.sin6_family=AF_INET6;
-		memcpy(v6.sin6_addr.s6_addr, v6addr->GetAddress(), 16);
+		memcpy(v6.sin6_addr.s6_addr, address.addr.ipv6, 16);
 		v6.sin6_flowinfo=0;
 		v6.sin6_scope_id=0;
 		v6.sin6_port=htons(port);
 		addr=reinterpret_cast<sockaddr*>(&v6);
 		addrLen=sizeof(v6);
-	}else{
-		LOGE("Unknown address type in TCP connect");
-		failed=true;
-		return;
 	}
 	fd=socket(addr->sa_family, SOCK_STREAM, IPPROTO_TCP);
 	if(fd<0){
@@ -346,14 +344,14 @@ void NetworkSocketPosix::Connect(const NetworkAddress *address, uint16_t port){
 	fcntl(fd, F_SETFL, O_NONBLOCK);
 	int res=(int)connect(fd, (const sockaddr*) addr, (socklen_t)addrLen);
 	if(res!=0 && errno!=EINVAL && errno!=EINPROGRESS){
-		LOGW("error connecting TCP socket to %s:%u: %d / %s; %d / %s", address->ToString().c_str(), port, res, strerror(res), errno, strerror(errno));
+		LOGW("error connecting TCP socket to %s:%u: %d / %s; %d / %s", address.ToString().c_str(), port, res, strerror(res), errno, strerror(errno));
 		close(fd);
 		failed=true;
 		return;
 	}
-	tcpConnectedAddress=v4addr ? (NetworkAddress*)new IPv4Address(*v4addr) : (NetworkAddress*)new IPv6Address(*v6addr);
+	tcpConnectedAddress=address;
 	tcpConnectedPort=port;
-	LOGI("successfully connected to %s:%d", tcpConnectedAddress->ToString().c_str(), tcpConnectedPort);
+	LOGI("successfully connected to %s:%d", tcpConnectedAddress.ToString().c_str(), tcpConnectedPort);
 }
 
 void NetworkSocketPosix::OnActiveInterfaceChanged(){
@@ -362,7 +360,7 @@ void NetworkSocketPosix::OnActiveInterfaceChanged(){
 	switchToV6at=VoIPController::GetCurrentTime()+ipv6Timeout;
 }
 
-std::string NetworkSocketPosix::GetLocalInterfaceInfo(IPv4Address *v4addr, IPv6Address *v6addr){
+std::string NetworkSocketPosix::GetLocalInterfaceInfo(NetworkAddress *v4addr, NetworkAddress *v6addr){
 	std::string name="";
 	// Android doesn't support ifaddrs
 #ifdef __ANDROID__
@@ -388,12 +386,12 @@ std::string NetworkSocketPosix::GetLocalInterfaceInfo(IPv4Address *v4addr, IPv6A
 
 		if(v4addr && jipv4){
 			const char* ipchars=env->GetStringUTFChars(jipv4, NULL);
-			*v4addr=IPv4Address(ipchars);
+			*v4addr=NetworkAddress::IPv4(ipchars);
 			env->ReleaseStringUTFChars(jipv4, ipchars);
 		}
 		if(v6addr && jipv6){
 			const char* ipchars=env->GetStringUTFChars(jipv6, NULL);
-			*v6addr=IPv6Address(ipchars);
+			*v6addr=NetworkAddress::IPv6(ipchars);
 			env->ReleaseStringUTFChars(jipv6, ipchars);
 		}
 	}else{
@@ -416,14 +414,14 @@ std::string NetworkSocketPosix::GetLocalInterfaceInfo(IPv4Address *v4addr, IPv6A
 					if((ntohl(addr->sin_addr.s_addr) & 0xFFFF0000)==0xA9FE0000)
 						continue;
 					if(v4addr)
-						*v4addr=IPv4Address(addr->sin_addr.s_addr);
+						*v4addr=NetworkAddress::IPv4(addr->sin_addr.s_addr);
 					name=interface->ifa_name;
 				}else if(addr->sin_family==AF_INET6){
 					const struct sockaddr_in6* addr6=(const struct sockaddr_in6*)addr;
 					if((addr6->sin6_addr.s6_addr[0] & 0xF0)==0xF0)
 						continue;
 					if(v6addr)
-						*v6addr=IPv6Address(addr6->sin6_addr.s6_addr);
+						*v6addr=NetworkAddress::IPv6(addr6->sin6_addr.s6_addr);
 					name=interface->ifa_name;
 				}
 			}
@@ -469,9 +467,9 @@ void NetworkSocketPosix::StringToV6Address(std::string address, unsigned char *o
 	memcpy(out, addr.s6_addr, 16);
 }
 
-IPv4Address *NetworkSocketPosix::ResolveDomainName(std::string name){
+NetworkAddress NetworkSocketPosix::ResolveDomainName(std::string name){
 	addrinfo* addr0;
-	IPv4Address* ret=NULL;
+	NetworkAddress ret=NetworkAddress::Empty();
 	int res=getaddrinfo(name.c_str(), NULL, NULL, &addr0);
 	if(res!=0){
 		LOGW("Error updating NAT64 prefix: %d / %s", res, gai_strerror(res));
@@ -480,7 +478,7 @@ IPv4Address *NetworkSocketPosix::ResolveDomainName(std::string name){
 		for(addrPtr=addr0;addrPtr;addrPtr=addrPtr->ai_next){
 			if(addrPtr->ai_family==AF_INET){
 				sockaddr_in* addr=(sockaddr_in*)addrPtr->ai_addr;
-				ret=new IPv4Address(addr->sin_addr.s_addr);
+				ret=NetworkAddress::IPv4(addr->sin_addr.s_addr);
 				break;
 			}
 		}
@@ -489,7 +487,7 @@ IPv4Address *NetworkSocketPosix::ResolveDomainName(std::string name){
 	return ret;
 }
 
-NetworkAddress *NetworkSocketPosix::GetConnectedAddress(){
+NetworkAddress NetworkSocketPosix::GetConnectedAddress(){
 	return tcpConnectedAddress;
 }
 
@@ -521,7 +519,7 @@ bool NetworkSocketPosix::Select(std::vector<NetworkSocket *> &readFds, std::vect
 
 	for(NetworkSocket*& s:readFds){
 		int sfd=GetDescriptorFromSocket(s);
-		if(sfd==0){
+		if(sfd<=0){
 			LOGW("can't select on one of sockets because it's not a NetworkSocketPosix instance");
 			continue;
 		}
@@ -532,7 +530,7 @@ bool NetworkSocketPosix::Select(std::vector<NetworkSocket *> &readFds, std::vect
 
 	for(NetworkSocket*& s:writeFds){
 		int sfd=GetDescriptorFromSocket(s);
-		if(sfd==0){
+		if(sfd<=0){
 			LOGW("can't select on one of sockets because it's not a NetworkSocketPosix instance");
 			continue;
 		}
@@ -545,7 +543,7 @@ bool NetworkSocketPosix::Select(std::vector<NetworkSocket *> &readFds, std::vect
 
 	for(NetworkSocket*& s:errorFds){
 		int sfd=GetDescriptorFromSocket(s);
-		if(sfd==0){
+		if(sfd<=0){
 			LOGW("can't select on one of sockets because it's not a NetworkSocketPosix instance");
 			continue;
 		}

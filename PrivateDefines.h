@@ -74,12 +74,11 @@
 #define EXTRA_TYPE_GROUP_CALL_KEY 5
 #define EXTRA_TYPE_REQUEST_GROUP 6
 #define EXTRA_TYPE_IPV6_ENDPOINT 7
-#define EXTRA_TYPE_BW_ESTIMATE 8
-#define EXTRA_TYPE_VIDEO_ROTATION 9
 
 #define STREAM_FLAG_ENABLED 1
 #define STREAM_FLAG_DTX 2
 #define STREAM_FLAG_EXTRA_EC 4
+#define STREAM_FLAG_PAUSED 8
 
 #define STREAM_RFLAG_SUPPORTED 1
 
@@ -109,9 +108,6 @@
 
 #define MAX_RECENT_PACKETS 128
 
-#define MAX(a,b) (a>b ? a : b)
-#define MIN(a,b) (a<b ? a : b)
-
 #define SHA1_LENGTH 20
 #define SHA256_LENGTH 32
 
@@ -133,5 +129,14 @@ inline bool seqgt(uint32_t s1, uint32_t s2){
 #define NEED_RATE_FLAG_RECONNECTING 8
 
 #define VIDEO_FRAME_FLAG_KEYFRAME 1
+
+#define VIDEO_ROTATION_MASK 3
+#define VIDEO_ROTATION_0 0
+#define VIDEO_ROTATION_90 1
+#define VIDEO_ROTATION_180 2
+#define VIDEO_ROTATION_270 3
+
+#define FEC_SCHEME_XOR 1
+#define FEC_SCHEME_CM256 2
 
 #endif //TGVOIP_PRIVATEDEFINES_H
