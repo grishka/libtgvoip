@@ -12,11 +12,17 @@
 #include <VideoToolbox/VideoToolbox.h>
 #include <vector>
 
+#ifdef __OBJC__
+@class TGVVideoSource;
+#else
+typedef struct objc_object TGVVideoSource;
+#endif
+
 namespace tgvoip{
 	namespace video{
 		class VideoToolboxEncoderSource : public VideoSource{
 		public:
-			VideoToolboxEncoderSource();
+			VideoToolboxEncoderSource(TGVVideoSource* parent);
 			virtual ~VideoToolboxEncoderSource();
 			virtual void Start() override;
 			virtual void Stop() override;
@@ -24,7 +30,9 @@ namespace tgvoip{
 			virtual void RequestKeyFrame() override;
 			virtual void SetBitrate(uint32_t bitrate) override;
 			void EncodeFrame(CMSampleBufferRef frame);
+			void SetStreamPaused(bool paused);
 			static std::vector<uint32_t> GetAvailableEncoders();
+			static bool SupportsFullHD();
 		private:
 			void EncoderCallback(OSStatus status, CMSampleBufferRef buffer, VTEncodeInfoFlags flags);
 			void SetEncoderBitrateAndLimit(uint32_t bitrate);
@@ -34,6 +42,8 @@ namespace tgvoip{
 			bool keyframeRequested=false;
 			uint32_t bitrateChangeRequested=0;
 			uint32_t lastBitrate=512*1024;
+			unsigned int lastFrameRate=0;
+			TGVVideoSource* objcObject;
 		};
 	}
 }

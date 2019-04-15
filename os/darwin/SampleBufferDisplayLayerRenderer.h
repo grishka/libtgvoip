@@ -27,12 +27,15 @@ namespace tgvoip{
 			virtual void Reset(uint32_t codec, unsigned int width, unsigned int height, std::vector<Buffer>& csd) override;
 			virtual void DecodeAndDisplay(Buffer frame, uint32_t pts) override;
 			virtual void SetStreamEnabled(bool enabled) override;
+			virtual void SetRotation(uint16_t rotation) override;
+			virtual void SetStreamPaused(bool paused) override;
 			static int GetMaximumResolution();
 			static std::vector<uint32_t> GetAvailableDecoders();
 		private:
 			TGVVideoRenderer* renderer;
 			CMFormatDescriptionRef formatDesc=NULL;
 			bool needReset=false;
+			bool streamEnabled=false;
 		};
 	}
 }

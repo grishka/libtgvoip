@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <vector>
 #include <memory>
+#include <atomic>
 
 struct OpusDecoder;
 
@@ -49,13 +50,13 @@ private:
 	int DecodeNextFrame();
 	::OpusDecoder* dec;
 	::OpusDecoder* ecDec;
-	BlockingQueue<unsigned char*>* decodedQueue;
-	BufferPool* bufferPool;
+	BlockingQueue<Buffer>* decodedQueue;
+	BufferPool<960*2, 32> bufferPool;
 	unsigned char* buffer;
 	unsigned char* lastDecoded;
 	unsigned char* processedBuffer;
 	size_t outputBufferSize;
-	bool running;
+	std::atomic<bool> running;
     Thread* thread;
 	Semaphore* semaphore;
 	uint32_t frameDuration;

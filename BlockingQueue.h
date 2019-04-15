@@ -59,7 +59,7 @@ public:
 		return GetInternal();
 	}
 
-	unsigned int Size(){
+	size_t Size(){
 		return queue.size();
 	}
 

@@ -45,8 +45,8 @@ private:
 	void RunBufferFarendThread();
 	bool didBufferFarend;
 	Thread* bufferFarendThread;
-	BlockingQueue<int16_t*>* farendQueue;
-	BufferPool* farendBufferPool;
+	BlockingQueue<Buffer>* farendQueue;
+	BufferPool<960*2, 10> farendBufferPool;
 	bool running;
 #endif
 };

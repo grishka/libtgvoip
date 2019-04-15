@@ -80,10 +80,10 @@ EchoCanceller::EchoCanceller(bool enableAEC, bool enableNS, bool enableAGC){
 	audioFrame->sample_rate_hz_=48000;
 	audioFrame->num_channels_=1;
 
-	farendQueue=new BlockingQueue<int16_t*>(11);
-	farendBufferPool=new BufferPool(960*2, 10);
+	farendQueue=new BlockingQueue<Buffer>(11);
 	running=true;
 	bufferFarendThread=new Thread(std::bind(&EchoCanceller::RunBufferFarendThread, this));
+	bufferFarendThread->SetName("VoipECBufferFarEnd");
 	bufferFarendThread->Start();
 
 #else
@@ -96,6 +96,9 @@ EchoCanceller::~EchoCanceller(){
 #ifndef TGVOIP_NO_DSP
 	delete apm;
 	delete audioFrame;
+	farendQueue->Put(Buffer());
+	bufferFarendThread->Join();
+	delete bufferFarendThread;
 #endif
 }
 
@@ -112,10 +115,12 @@ void EchoCanceller::SpeakerOutCallback(unsigned char* data, size_t len){
     if(len!=960*2 || !enableAEC || !isOn)
 		return;
 #ifndef TGVOIP_NO_DSP
-	int16_t* buf=(int16_t*)farendBufferPool->Get();
-	if(buf){
-		memcpy(buf, data, 960*2);
-		farendQueue->Put(buf);
+    try{
+    	Buffer buf=farendBufferPool.Get();
+    	buf.CopyFrom(data, 0, 960*2);
+    	farendQueue->Put(std::move(buf));
+	}catch(std::bad_alloc& x){
+    	LOGW("Echo canceller can't keep up with real time");
 	}
 #endif
 }
@@ -127,15 +132,17 @@ void EchoCanceller::RunBufferFarendThread(){
 	frame.sample_rate_hz_=48000;
 	frame.samples_per_channel_=480;
 	while(running){
-		int16_t* samplesIn=farendQueue->GetBlocking();
-		if(samplesIn){
-			memcpy(frame.mutable_data(), samplesIn, 480*2);
-			apm->ProcessReverseStream(&frame);
-			memcpy(frame.mutable_data(), samplesIn+480, 480*2);
-			apm->ProcessReverseStream(&frame);
-			didBufferFarend=true;
-			farendBufferPool->Reuse(reinterpret_cast<unsigned char*>(samplesIn));
+		Buffer buf=farendQueue->GetBlocking();
+		if(buf.IsEmpty()){
+			LOGI("Echo canceller buffer farend thread exiting");
+			return;
 		}
+		int16_t* samplesIn=(int16_t*)*buf;
+		memcpy(frame.mutable_data(), samplesIn, 480*2);
+		apm->ProcessReverseStream(&frame);
+		memcpy(frame.mutable_data(), samplesIn+480, 480*2);
+		apm->ProcessReverseStream(&frame);
+		didBufferFarend=true;
 	}
 }
 #endif

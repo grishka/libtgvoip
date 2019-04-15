@@ -16,6 +16,7 @@
 #include "utils.h"
 
 #include <stdint.h>
+#include <atomic>
 
 struct OpusEncoder;
 
@@ -35,7 +36,7 @@ public:
 	uint32_t GetBitrate();
 	void SetDTX(bool enable);
 	void SetLevelMeter(AudioLevelMeter* levelMeter);
-	void SetCallback(void (*f)(unsigned char*, size_t, unsigned char*, size_t, void*), void* param);
+	void SetCallback(std::function <void(unsigned char*, size_t, unsigned char*, size_t)> callback);
 	void SetSecondaryEncoderEnabled(bool enabled);
 	void SetVadMode(bool vad);
 	void AddAudioEffect(effects::AudioEffect* effect);
@@ -53,14 +54,14 @@ private:
 	::OpusEncoder* enc;
 	::OpusEncoder* secondaryEncoder;
 	unsigned char buffer[4096];
-	uint32_t requestedBitrate;
+	std::atomic<uint32_t> requestedBitrate;
 	uint32_t currentBitrate;
 	Thread* thread;
-	BlockingQueue<unsigned char*> queue;
-	BufferPool bufferPool;
+	BlockingQueue<Buffer> queue;
+	BufferPool<960*2, 10> bufferPool;
 	EchoCanceller* echoCanceller;
-	int complexity;
-	bool running;
+	std::atomic<int> complexity;
+	std::atomic<bool> running;
 	uint32_t frameDuration;
 	int packetLossPercent;
 	AudioLevelMeter* levelMeter;
@@ -74,8 +75,7 @@ private:
 
 	bool wasSecondaryEncoderEnabled=false;
 
-	void (*callback)(unsigned char*, size_t, unsigned char*, size_t, void*);
-	void* callbackParam;
+	std::function <void(unsigned char*, size_t, unsigned char*, size_t)> callback;
 };
 }
 

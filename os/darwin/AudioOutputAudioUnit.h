@@ -7,6 +7,7 @@
 #ifndef LIBTGVOIP_AUDIOOUTPUTAUDIOUNIT_H
 #define LIBTGVOIP_AUDIOOUTPUTAUDIOUNIT_H
 
+#include <atomic>
 #include <AudioUnit/AudioUnit.h>
 #include "../../audio/AudioOutput.h"
 #include "../../utils.h"
@@ -28,7 +29,7 @@ public:
 #endif
 
 private:
-	bool isPlaying;
+	std::atomic<bool> isPlaying;
 	unsigned char remainingData[10240];
 	size_t remainingDataSize;
 	AudioUnitIO* io;

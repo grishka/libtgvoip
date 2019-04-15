@@ -31,6 +31,7 @@ public:
 	~CongestionControl();
 
 	void PacketSent(uint32_t seq, size_t size);
+	void PacketLost(uint32_t seq);
 	void PacketAcknowledged(uint32_t seq);
 
 	double GetAverageRTT();
@@ -56,7 +57,6 @@ private:
 	uint32_t tickCount;
 	size_t inflightDataSize;
 	size_t cwnd;
-	Mutex mutex;
 };
 }
 

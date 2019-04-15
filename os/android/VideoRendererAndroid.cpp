@@ -13,6 +13,7 @@ using namespace tgvoip::video;
 jmethodID VideoRendererAndroid::resetMethod=NULL;
 jmethodID VideoRendererAndroid::decodeAndDisplayMethod=NULL;
 jmethodID VideoRendererAndroid::setStreamEnabledMethod=NULL;
+jmethodID VideoRendererAndroid::setRotationMethod=NULL;
 std::vector<uint32_t> VideoRendererAndroid::availableDecoders;
 int VideoRendererAndroid::maxResolution;
 
@@ -79,6 +80,7 @@ void VideoRendererAndroid::RunThread(){
 	constexpr size_t bufferSize=200*1024;
 	unsigned char* buf=reinterpret_cast<unsigned char*>(malloc(bufferSize));
 	jobject jbuf=env->NewDirectByteBuffer(buf, bufferSize);
+	uint16_t lastSetRotation=0;
 
 	while(running){
 		//LOGV("before get from queue");
@@ -91,6 +93,10 @@ void VideoRendererAndroid::RunThread(){
 			if(request.buffer.Length()>bufferSize){
 				LOGE("Frame data is too long (%u, max %u)", (int) request.buffer.Length(), (int) bufferSize);
 			}else{
+				if(lastSetRotation!=rotation){
+					lastSetRotation=rotation;
+					env->CallVoidMethod(jobj, setRotationMethod, (jint)rotation);
+				}
 				memcpy(buf, *request.buffer, request.buffer.Length());
 				env->CallVoidMethod(jobj, decodeAndDisplayMethod, jbuf, (jint) request.buffer.Length(), 0);
 			}
@@ -131,7 +137,18 @@ void VideoRendererAndroid::RunThread(){
 
 void VideoRendererAndroid::SetStreamEnabled(bool enabled){
 	LOGI("Video stream state: %d", enabled);
-	/*decoderThread.Post([=](){
-		decoderEnv->CallVoidMethod(jobj, setStreamEnabledMethod, enabled);
-	});*/
+	streamEnabled=enabled;
+	Request req{
+			Buffer(0),
+			Request::Type::UpdateStreamState
+	};
+	queue.Put(std::move(req));
+}
+
+void VideoRendererAndroid::SetRotation(uint16_t rotation){
+	this->rotation=rotation;
+}
+
+void VideoRendererAndroid::SetStreamPaused(bool paused){
+
 }

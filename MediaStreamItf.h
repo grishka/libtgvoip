@@ -55,8 +55,8 @@ private:
 		static size_t OutputCallback(unsigned char* data, size_t length, void* arg);
 		std::vector<MixerInput> inputs;
 		Thread* thread;
-		BufferPool bufferPool;
-		BlockingQueue<unsigned char*> processedQueue;
+		BufferPool<960*2, 16> bufferPool;
+		BlockingQueue<Buffer> processedQueue;
 		Semaphore semaphore;
 		EchoCanceller* echoCanceller;
 		bool running;

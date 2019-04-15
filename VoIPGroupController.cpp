@@ -37,7 +37,7 @@ VoIPGroupController::~VoIPGroupController(){
 	}
 }
 
-void VoIPGroupController::SetGroupCallInfo(unsigned char *encryptionKey, unsigned char *reflectorGroupTag, unsigned char *reflectorSelfTag, unsigned char *reflectorSelfSecret, unsigned char* reflectorSelfTagHash, int32_t selfUserID, IPv4Address reflectorAddress, IPv6Address reflectorAddressV6, uint16_t reflectorPort){
+void VoIPGroupController::SetGroupCallInfo(unsigned char *encryptionKey, unsigned char *reflectorGroupTag, unsigned char *reflectorSelfTag, unsigned char *reflectorSelfSecret, unsigned char* reflectorSelfTagHash, int32_t selfUserID, NetworkAddress reflectorAddress, NetworkAddress reflectorAddressV6, uint16_t reflectorPort){
 	Endpoint e;
 	e.address=reflectorAddress;
 	e.v6address=reflectorAddressV6;
@@ -220,7 +220,7 @@ void VoIPGroupController::SendInit(){
 
 void VoIPGroupController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcEndpoint){
 	//LOGD("Received incoming packet from %s:%u, %u bytes", packet.address->ToString().c_str(), packet.port, packet.length);
-	if(packet.length<17 || packet.length>2000){
+	/*if(packet.length<17 || packet.length>2000){
 		LOGW("Received packet has wrong length %d", (int)packet.length);
 		return;
 	}
@@ -259,8 +259,8 @@ void VoIPGroupController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint&
 					//LOGV("received udpReflector.lastPacketsInfo");
 					in=BufferInputStream(buf, len+16);
 					in.Seek(16);
-					/*int32_t date=*/in.ReadInt32();
-					/*int64_t queryID=*/in.ReadInt64();
+					/*int32_t date=* /in.ReadInt32();
+					/*int64_t queryID=* /in.ReadInt64();
 					int32_t vectorMagic=in.ReadInt32();
 					if(vectorMagic!=TLID_VECTOR){
 						LOGW("last packets info: expected vector, got %08X", vectorMagic);
@@ -295,7 +295,7 @@ void VoIPGroupController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint&
 					int32_t sentCount=in.ReadInt32();
 					//LOGV("%d sent packets", sentCount);
 					for(int i=0;i<sentCount;i++){
-						/*int32_t p=*/in.ReadInt32();
+						/*int32_t p=* /in.ReadInt32();
 						//LOGV("Sent packet: %08X", p);
 					}
 					if(udpConnectivityState!=UDP_AVAILABLE)
@@ -398,7 +398,7 @@ void VoIPGroupController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint&
 		LOGW("Received packet has wrong flags");
 		return;
 	}
-	/*uint32_t seq=(uint32_t) */in.ReadInt32();
+	/*uint32_t seq=(uint32_t) * /in.ReadInt32();
 	unsigned char senderTagHash[16];
 	in.ReadBytes(senderTagHash, 16);
 	if(memcmp(senderTagHash, sender->memberTagHash, 16)!=0){
@@ -408,7 +408,7 @@ void VoIPGroupController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint&
 
 	//int32_t oneMoreInnerLengthWhyDoWeEvenNeedThis;
 	if(flags & PFLAG_HAS_DATA){
-		/*oneMoreInnerLengthWhyDoWeEvenNeedThis=*/in.ReadTlLength();
+		/*oneMoreInnerLengthWhyDoWeEvenNeedThis=* /in.ReadTlLength();
 	}
 	unsigned char type=(unsigned char) ((flags >> 24) & 0xFF);
 	lastRecvPacketTime=GetCurrentTime();
@@ -443,7 +443,7 @@ void VoIPGroupController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint&
 			/*if(!audioOutStarted && audioOutput){
 				audioOutput->Start();
 				audioOutStarted=true;
-			}*/
+			}* /
 			if(in.GetOffset()+sdlen>in.GetLength()){
 				return;
 			}
@@ -458,7 +458,7 @@ void VoIPGroupController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint&
 			if(i<count-1)
 				in.Seek(in.GetOffset()+sdlen);
 		}
-	}
+	}*/
 }
 
 void VoIPGroupController::SendUdpPing(Endpoint& endpoint){
@@ -497,7 +497,7 @@ void VoIPGroupController::SendRecentPacketsRequest(){
 }
 
 void VoIPGroupController::SendSpecialReflectorRequest(unsigned char *data, size_t len){
-	BufferOutputStream out(1024);
+	/*BufferOutputStream out(1024);
 	unsigned char buf[1500];
 	crypto.rand_bytes(buf, 8);
 	out.WriteBytes(buf, 8);
@@ -531,7 +531,7 @@ void VoIPGroupController::SendSpecialReflectorRequest(unsigned char *data, size_
 	pkt.protocol=PROTO_UDP;
 	pkt.data=out.GetBuffer();
 	pkt.length=out.GetLength();
-	ActuallySendPacket(pkt, groupReflector);
+	ActuallySendPacket(pkt, groupReflector);*/
 }
 
 void VoIPGroupController::SendRelayPings(){
@@ -553,7 +553,7 @@ void VoIPGroupController::OnAudioOutputReady(){
 	encoder->SetLevelMeter(&selfLevelMeter);
 }
 
-void VoIPGroupController::WritePacketHeader(uint32_t seq, BufferOutputStream *s, unsigned char type, uint32_t length){
+void VoIPGroupController::WritePacketHeader(uint32_t seq, BufferOutputStream *s, unsigned char type, uint32_t length, PacketSender* source){
 	s->WriteInt32(TLID_DECRYPTED_AUDIO_BLOCK);
 	int64_t randomID;
 	crypto.rand_bytes((uint8_t *) &randomID, 8);
@@ -652,13 +652,13 @@ void VoIPGroupController::SendPacket(unsigned char *data, size_t len, Endpoint& 
 	else
 		stats.bytesSentWifi+=(uint64_t)out.GetLength();
 
-	NetworkPacket pkt={0};
+	/*NetworkPacket pkt={0};
 	pkt.address=(NetworkAddress*)&ep.address;
 	pkt.port=ep.port;
 	pkt.length=out.GetLength();
 	pkt.data=out.GetBuffer();
 	pkt.protocol=ep.type==Endpoint::Type::TCP_RELAY ? PROTO_TCP : PROTO_UDP;
-	ActuallySendPacket(pkt, ep);
+	ActuallySendPacket(pkt, ep);*/
 }
 
 void VoIPGroupController::SetCallbacks(VoIPGroupController::Callbacks callbacks){
