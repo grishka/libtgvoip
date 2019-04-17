@@ -69,11 +69,11 @@ void VoIPControllerWrapper::SetPublicEndpoints(const Platform::Array<libtgvoip::
 		char buf[128];
 		if (_ep->ipv4){
 			WideCharToMultiByte(CP_UTF8, 0, _ep->ipv4->Data(), -1, buf, sizeof(buf), NULL, NULL);
-			ep.address = IPv4Address(buf);
+			ep.address = NetworkAddress::IPv4(buf);
 		}
 		if (_ep->ipv6){
 			WideCharToMultiByte(CP_UTF8, 0, _ep->ipv6->Data(), -1, buf, sizeof(buf), NULL, NULL);
-			ep.v6address = IPv6Address(buf);
+			ep.v6address = NetworkAddress::IPv6(buf);
 		}
 		ep.port = _ep->port;
 		if (_ep->peerTag->Length != 16)

@@ -903,6 +903,12 @@
       <Filter>audio</Filter>
     </ClCompile>
     <ClCompile Include="webrtc_dsp\rtc_base\platform_file.cc" />
+    <ClCompile Include="video\VideoFEC.cpp">
+      <Filter>video</Filter>
+    </ClCompile>
+    <ClCompile Include="video\VideoPacketSender.cpp">
+      <Filter>video</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="VoIPController.h" />
@@ -1920,5 +1926,11 @@
     </ClInclude>
     <ClInclude Include="PrivateDefines.h" />
     <ClInclude Include="webrtc_dsp\rtc_base\platform_file.h" />
+    <ClInclude Include="video\VideoFEC.h">
+      <Filter>video</Filter>
+    </ClInclude>
+    <ClInclude Include="video\VideoPacketSender.h">
+      <Filter>video</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

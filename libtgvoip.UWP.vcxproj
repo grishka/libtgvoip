@@ -127,7 +127,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -146,7 +146,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;WEBRTC_HAS_NEON;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -182,7 +182,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;NDEBUG;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;NDEBUG;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -200,7 +200,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;NDEBUG;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;NDEBUG;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;WEBRTC_HAS_NEON;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -218,7 +218,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;NDEBUG;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINRT_DLL;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;NOMINMAX;WEBRTC_APM_DEBUG_DUMP=0;NDEBUG;TGVOIP_USE_CUSTOM_CRYPTO;WEBRTC_WIN;WEBRTC_UWP;WEBRTC_NS_FLOAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -261,6 +261,8 @@
     <ClInclude Include="threading.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="video\ScreamCongestionController.h" />
+    <ClInclude Include="video\VideoFEC.h" />
+    <ClInclude Include="video\VideoPacketSender.h" />
     <ClInclude Include="video\VideoRenderer.h" />
     <ClInclude Include="video\VideoSource.h" />
     <ClInclude Include="VoIPController.h" />
@@ -611,6 +613,8 @@
     <ClCompile Include="os\windows\WindowsSpecific.cpp" />
     <ClCompile Include="PacketReassembler.cpp" />
     <ClCompile Include="video\ScreamCongestionController.cpp" />
+    <ClCompile Include="video\VideoFEC.cpp" />
+    <ClCompile Include="video\VideoPacketSender.cpp" />
     <ClCompile Include="video\VideoRenderer.cpp" />
     <ClCompile Include="video\VideoSource.cpp" />
     <ClCompile Include="VoIPController.cpp" />
