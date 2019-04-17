@@ -419,13 +419,15 @@ host_triplet = @host@
 @ENABLE_AUDIO_CALLBACK_TRUE@@ENABLE_DSP_TRUE@am__append_17 = \
 @ENABLE_AUDIO_CALLBACK_TRUE@@ENABLE_DSP_TRUE@audio/AudioIOCallback.h
 
-@ENABLE_DSP_TRUE@@TARGET_CPU_ARM_TRUE@am__append_18 = \
+@ENABLE_DESKTOP_DSP_TRUE@@ENABLE_DSP_TRUE@am__append_18 = -DTGVOIP_USE_DESKTOP_DSP
+@ENABLE_DSP_TRUE@@ENABLE_OPUS_MUSIC_TRUE@am__append_19 = -DTGVOIP_USE_OPUS_MUSIC
+@ENABLE_DSP_TRUE@@TARGET_CPU_ARM_TRUE@am__append_20 = \
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARM_TRUE@webrtc_dsp/common_audio/signal_processing/complex_bit_reverse_arm.S \
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARM_TRUE@webrtc_dsp/common_audio/third_party/spl_sqrt_floor/spl_sqrt_floor_arm.S
 
-@ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@am__append_19 = -mfpu=neon -mfloat-abi=hard
-@ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@am__append_20 = -mfpu=neon -mfloat-abi=hard
-@ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@am__append_21 = \
+@ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@am__append_21 = -mfpu=neon -mfloat-abi=hard
+@ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@am__append_22 = -mfpu=neon -mfloat-abi=hard
+@ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@am__append_23 = \
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@webrtc_dsp/common_audio/signal_processing/cross_correlation_neon.c \
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@webrtc_dsp/common_audio/signal_processing/downsample_fast_neon.c \
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@webrtc_dsp/common_audio/signal_processing/min_max_operations_neon.c \
@@ -435,13 +437,13 @@ host_triplet = @host@
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARMV7_TRUE@@TARGET_CPU_ARM_TRUE@webrtc_dsp/modules/audio_processing/utility/ooura_fft_neon.cc
 
 # webrtc_dsp/common_audio/signal_processing/filter_ar_fast_q12_armv7.S
-@ENABLE_DSP_TRUE@@TARGET_CPU_ARM_FALSE@am__append_22 = \
+@ENABLE_DSP_TRUE@@TARGET_CPU_ARM_FALSE@am__append_24 = \
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARM_FALSE@webrtc_dsp/common_audio/signal_processing/complex_bit_reverse.c \
 @ENABLE_DSP_TRUE@@TARGET_CPU_ARM_FALSE@webrtc_dsp/common_audio/third_party/spl_sqrt_floor/spl_sqrt_floor.c
 
 
 # headers
-@ENABLE_DSP_TRUE@am__append_23 = \
+@ENABLE_DSP_TRUE@am__append_25 = \
 @ENABLE_DSP_TRUE@webrtc_dsp/system_wrappers/include/field_trial.h \
 @ENABLE_DSP_TRUE@webrtc_dsp/system_wrappers/include/cpu_features_wrapper.h \
 @ENABLE_DSP_TRUE@webrtc_dsp/system_wrappers/include/asm_defines.h \
@@ -761,8 +763,8 @@ host_triplet = @host@
 @ENABLE_DSP_TRUE@webrtc_dsp/common_audio/vad/vad_sp.h \
 @ENABLE_DSP_TRUE@webrtc_dsp/common_audio/vad/vad_filterbank.h
 
-@ENABLE_DSP_FALSE@am__append_24 = -DTGVOIP_NO_DSP
-@TARGET_OS_OSX_TRUE@am__append_25 = -std=gnu++0x $(CFLAGS)
+@ENABLE_DSP_FALSE@am__append_26 = -DTGVOIP_NO_DSP
+@TARGET_OS_OSX_TRUE@am__append_27 = -std=gnu++0x $(CFLAGS)
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -2227,11 +2229,12 @@ AWK = @AWK@
 CC = @CC@
 CCAS = @CCAS@
 CCASDEPMODE = @CCASDEPMODE@
-CCASFLAGS = @CCASFLAGS@ $(am__append_9) $(am__append_20)
+CCASFLAGS = @CCASFLAGS@ $(am__append_9) $(am__append_22)
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = -Wall -DHAVE_CONFIG_H -Wno-unknown-pragmas $(am__append_8) \
 	$(am__append_11) $(am__append_13) $(am__append_15) \
-	$(am__append_19) $(am__append_24)
+	$(am__append_18) $(am__append_19) $(am__append_21) \
+	$(am__append_26)
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CXX = @CXX@
@@ -2272,7 +2275,7 @@ NM = @NM@
 NMEDIT = @NMEDIT@
 OBJCXX = @OBJCXX@
 OBJCXXDEPMODE = @OBJCXXDEPMODE@
-OBJCXXFLAGS = @OBJCXXFLAGS@ $(am__append_25)
+OBJCXXFLAGS = @OBJCXXFLAGS@ $(am__append_27)
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
 OTOOL = @OTOOL@
@@ -2357,8 +2360,8 @@ SRC = VoIPController.cpp Buffers.cpp CongestionControl.cpp \
 	video/VideoRenderer.cpp video/ScreamCongestionController.cpp \
 	json11.cpp $(am__append_1) $(am__append_4) $(am__append_6) \
 	$(am__append_10) $(am__append_12) $(am__append_14) \
-	$(am__append_16) $(am__append_18) $(am__append_21) \
-	$(am__append_22) $(am__append_23)
+	$(am__append_16) $(am__append_20) $(am__append_23) \
+	$(am__append_24) $(am__append_25)
 TGVOIP_HDRS = VoIPController.h Buffers.h BlockingQueue.h \
 	PrivateDefines.h CongestionControl.h EchoCanceller.h \
 	JitterBuffer.h logging.h threading.h MediaStreamItf.h \

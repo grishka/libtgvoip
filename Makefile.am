@@ -401,6 +401,14 @@ TGVOIP_HDRS += \
 audio/AudioIOCallback.h
 endif
 
+if ENABLE_DESKTOP_DSP
+CFLAGS += -DTGVOIP_USE_DESKTOP_DSP
+endif
+
+if ENABLE_OPUS_MUSIC
+CFLAGS += -DTGVOIP_USE_OPUS_MUSIC
+endif
+
 if TARGET_CPU_ARM
 SRC += \
 webrtc_dsp/common_audio/signal_processing/complex_bit_reverse_arm.S \
