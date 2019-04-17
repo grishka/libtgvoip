@@ -261,6 +261,8 @@
     <ClInclude Include="threading.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="video\ScreamCongestionController.h" />
+    <ClInclude Include="video\VideoFEC.h" />
+    <ClInclude Include="video\VideoPacketSender.h" />
     <ClInclude Include="video\VideoRenderer.h" />
     <ClInclude Include="video\VideoSource.h" />
     <ClInclude Include="VoIPController.h" />
@@ -611,6 +613,8 @@
     <ClCompile Include="os\windows\WindowsSpecific.cpp" />
     <ClCompile Include="PacketReassembler.cpp" />
     <ClCompile Include="video\ScreamCongestionController.cpp" />
+    <ClCompile Include="video\VideoFEC.cpp" />
+    <ClCompile Include="video\VideoPacketSender.cpp" />
     <ClCompile Include="video\VideoRenderer.cpp" />
     <ClCompile Include="video\VideoSource.cpp" />
     <ClCompile Include="VoIPController.cpp" />
