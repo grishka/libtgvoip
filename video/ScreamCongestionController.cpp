@@ -12,28 +12,28 @@ using namespace tgvoip;
 using namespace tgvoip::video;
 
 namespace{
-	/*static*/ constexpr float QDELAY_TARGET_LO=0.1f; // seconds
-	/*static*/ constexpr float QDELAY_TARGET_HI=0.4f; // seconds
-	/*static*/ constexpr float QDELAY_WEIGHT=0.1f;
-	/*static*/ constexpr float QDELAY_TREND_TH=0.2f;
-	/*static*/ constexpr uint32_t MIN_CWND=3000; // bytes
-	/*static*/ constexpr float MAX_BYTES_IN_FLIGHT_HEAD_ROOM=1.1f;
-	/*static*/ constexpr float GAIN=1.0f;
-	/*static*/ constexpr float BETA_LOSS=0.9f;
-	/*static*/ constexpr float BETA_ECN=0.9f;
-	/*static*/ constexpr float BETA_R=0.9f;
-	/*static*/ constexpr uint32_t MSS=1024;
-	/*static*/ constexpr float RATE_ADJUST_INTERVAL=0.2f;
-	/*static*/ constexpr uint32_t TARGET_BITRATE_MIN=50*1024; // bps
-	/*static*/ constexpr uint32_t TARGET_BITRATE_MAX=500*1024; // bps
-	/*static*/ constexpr uint32_t RAMP_UP_SPEED=200000; // bps/s
-	/*static*/ constexpr float PRE_CONGESTION_GUARD=0.1f;
-	/*static*/ constexpr float TX_QUEUE_SIZE_FACTOR=1.0f;
-	/*static*/ constexpr float RTP_QDELAY_TH=0.02f; // seconds
-	/*static*/ constexpr float TARGET_RATE_SCALE_RTP_QDELAY=0.95f;
-	/*static*/ constexpr float QDELAY_TREND_LO=0.2f;
-	/*static*/ constexpr float T_RESUME_FAST_INCREASE=5.0f; // seconds
-	/*static*/ constexpr uint32_t RATE_PACE_MIN=50000; // bps
+	constexpr float QDELAY_TARGET_LO=0.1f; // seconds
+	constexpr float QDELAY_TARGET_HI=0.4f; // seconds
+	constexpr float QDELAY_WEIGHT=0.1f;
+	constexpr float QDELAY_TREND_TH=0.2f;
+	constexpr uint32_t MIN_CWND=3000; // bytes
+	constexpr float MAX_BYTES_IN_FLIGHT_HEAD_ROOM=1.1f;
+	constexpr float GAIN=1.0f;
+	constexpr float BETA_LOSS=0.9f;
+	constexpr float BETA_ECN=0.9f;
+	constexpr float BETA_R=0.9f;
+	constexpr uint32_t MSS=1024;
+	constexpr float RATE_ADJUST_INTERVAL=0.2f;
+	constexpr uint32_t TARGET_BITRATE_MIN=50*1024; // bps
+	constexpr uint32_t TARGET_BITRATE_MAX=500*1024; // bps
+	constexpr uint32_t RAMP_UP_SPEED=1024*1024;//200000; // bps/s
+	constexpr float PRE_CONGESTION_GUARD=0.1f;
+	constexpr float TX_QUEUE_SIZE_FACTOR=1.0f;
+	constexpr float RTP_QDELAY_TH=0.02f; // seconds
+	constexpr float TARGET_RATE_SCALE_RTP_QDELAY=0.95f;
+	constexpr float QDELAY_TREND_LO=0.2f;
+	constexpr float T_RESUME_FAST_INCREASE=5.0f; // seconds
+	constexpr uint32_t RATE_PACE_MIN=50000; // bps
 }
 
 ScreamCongestionController::ScreamCongestionController() : qdelayTarget(QDELAY_TARGET_LO), cwnd(MIN_CWND) {
@@ -71,7 +71,7 @@ void ScreamCongestionController::UpdateCWnd(float qdelay){
 			inFastIncrease=false;
 		}else{
 			if((float)bytesInFlight*1.5f+bytesNewlyAcked>cwnd){
-				LOGD("HERE");
+				//LOGD("HERE");
 				cwnd+=bytesNewlyAcked;
 			}
 			return;

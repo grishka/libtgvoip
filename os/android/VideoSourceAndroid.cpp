@@ -86,3 +86,7 @@ void VideoSourceAndroid::SetBitrate(uint32_t bitrate){
 		env->CallVoidMethod(javaObject, setBitrateMethod, (jint)bitrate);
 	});
 }
+
+void VideoSourceAndroid::SetStreamPaused(bool paused){
+	streamStateCallback(paused);
+}

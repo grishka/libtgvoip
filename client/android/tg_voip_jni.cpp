@@ -532,6 +532,10 @@ namespace tgvoip {
 		((video::VideoSourceAndroid*)(intptr_t)inst)->SetRotation((unsigned int)rotation);
 	}
 
+	void VideoSource_nativeSetPaused(JNIEnv* env, jobject thiz, jlong inst, jboolean paused){
+		((video::VideoSourceAndroid*)(intptr_t)inst)->SetStreamPaused((bool)paused);
+	}
+
 #pragma mark - VideoRenderer
 
 	jlong VideoRenderer_nativeInit(JNIEnv* env, jobject thiz){
@@ -612,7 +616,7 @@ extern "C" void tgvoipRegisterNatives(JNIEnv* env){
 		if(videoRenderer){
 			video::VideoRendererAndroid::decodeAndDisplayMethod=env->GetMethodID(videoRenderer, "decodeAndDisplay", "(Ljava/nio/ByteBuffer;IJ)V");
 			video::VideoRendererAndroid::resetMethod=env->GetMethodID(videoRenderer, "reset", "(Ljava/lang/String;II[[B)V");
-			video::VideoRendererAndroid::setStreamEnabledMethod=env->GetMethodID(videoRenderer, "setStreamEnabled", "(Z)V");
+			video::VideoRendererAndroid::setStreamEnabledMethod=env->GetMethodID(videoRenderer, "setStreamEnabled", "(ZZ)V");
 			video::VideoRendererAndroid::setRotationMethod=env->GetMethodID(videoRenderer, "setRotation", "(I)V");
 		}
 	}
@@ -713,7 +717,8 @@ extern "C" void tgvoipRegisterNatives(JNIEnv* env){
 				{"nativeRelease", "(J)V", (void *) &tgvoip::VideoSource_nativeRelease},
 				{"nativeSetVideoStreamParameters", "(J[Ljava/nio/ByteBuffer;II)V", (void *) &tgvoip::VideoSource_nativeSetVideoStreamParameters},
 				{"nativeSendFrame", "(JLjava/nio/ByteBuffer;III)V", (void *) &tgvoip::VideoSource_nativeSendFrame},
-				{"nativeSetRotation", "(JI)V", (void*)&tgvoip::VideoSource_nativeSetRotation}
+				{"nativeSetRotation", "(JI)V", (void*)&tgvoip::VideoSource_nativeSetRotation},
+				{"nativeSetPaused", "(JZ)V", (void*)&tgvoip::VideoSource_nativeSetPaused}
 		};
 		env->RegisterNatives(videoSource, videoSourceMethods, sizeof(videoSourceMethods)/sizeof(JNINativeMethod));
 	}

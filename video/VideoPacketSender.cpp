@@ -94,6 +94,7 @@ void VideoPacketSender::SetSource(VideoSource *source){
 	if(!source)
 		return;
 
+	sourceChangeTime=lastVideoResolutionChangeTime=VoIPController::GetCurrentTime();
 	uint32_t bitrate=videoCongestionControl.GetBitrate();
 	currentVideoBitrate=bitrate;
 	source->SetBitrate(bitrate);
@@ -102,9 +103,10 @@ void VideoPacketSender::SetSource(VideoSource *source){
 	source->SetCallback(std::bind(&VideoPacketSender::SendFrame, this, placeholders::_1, placeholders::_2, placeholders::_3));
 	source->SetStreamStateCallback([this](bool paused){
 		stm->paused=paused;
-		SendStreamFlags(*stm);
+		GetMessageThread().Post([this]{
+			SendStreamFlags(*stm);
+		});
 	});
-	lastVideoResolutionChangeTime=VoIPController::GetCurrentTime();
 }
 
 void VideoPacketSender::SendFrame(const Buffer &_frame, uint32_t flags, uint32_t rotation){
@@ -125,7 +127,7 @@ void VideoPacketSender::SendFrame(const Buffer &_frame, uint32_t flags, uint32_t
 			source->SetBitrate(bitrate);
 		}
 		int resolutionFromBitrate=GetVideoResolutionForCurrentBitrate();
-		if(resolutionFromBitrate!=stm->resolution && currentTime-lastVideoResolutionChangeTime>3.0){
+		if(resolutionFromBitrate!=stm->resolution && currentTime-lastVideoResolutionChangeTime>3.0 && currentTime-sourceChangeTime>10.0){
 			LOGI("Changing video resolution: %d -> %d", stm->resolution, resolutionFromBitrate);
 			stm->resolution=resolutionFromBitrate;
 			GetMessageThread().Post([this, resolutionFromBitrate]{
@@ -291,33 +293,33 @@ void VideoPacketSender::SendFrame(const Buffer &_frame, uint32_t flags, uint32_t
 int VideoPacketSender::GetVideoResolutionForCurrentBitrate(){
 
 	int peerMaxVideoResolution=GetProtocolInfo().maxVideoResolution;
-
 	int resolutionFromBitrate=INIT_VIDEO_RES_1080;
-	// TODO: probably move this to server config
-	if(stm->codec==CODEC_AVC || stm->codec==CODEC_VP8){
-		if(currentVideoBitrate>400000){
-			resolutionFromBitrate=INIT_VIDEO_RES_720;
-		}else if(currentVideoBitrate>250000){
-			resolutionFromBitrate=INIT_VIDEO_RES_480;
-		}else{
-			resolutionFromBitrate=INIT_VIDEO_RES_360;
+	if(VoIPController::GetCurrentTime()-sourceChangeTime<10.0){
+		// TODO: probably move this to server config
+		if(stm->codec==CODEC_AVC || stm->codec==CODEC_VP8){
+			if(currentVideoBitrate>400000){
+				resolutionFromBitrate=INIT_VIDEO_RES_720;
+			}else if(currentVideoBitrate>250000){
+				resolutionFromBitrate=INIT_VIDEO_RES_480;
+			}else{
+				resolutionFromBitrate=INIT_VIDEO_RES_360;
+			}
+		}else if(stm->codec==CODEC_HEVC || stm->codec==CODEC_VP9){
+			if(currentVideoBitrate>400000){
+				resolutionFromBitrate=INIT_VIDEO_RES_1080;
+			}else if(currentVideoBitrate>250000){
+				resolutionFromBitrate=INIT_VIDEO_RES_720;
+			}else if(currentVideoBitrate>100000){
+				resolutionFromBitrate=INIT_VIDEO_RES_480;
+			}else{
+				resolutionFromBitrate=INIT_VIDEO_RES_360;
+			}
 		}
-	}else if(stm->codec==CODEC_HEVC || stm->codec==CODEC_VP9){
-		if(currentVideoBitrate>400000){
+	}else{
+		if(stm->codec==CODEC_AVC || stm->codec==CODEC_VP8)
+			resolutionFromBitrate=INIT_VIDEO_RES_720;
+		else if(stm->codec==CODEC_HEVC || stm->codec==CODEC_VP9)
 			resolutionFromBitrate=INIT_VIDEO_RES_1080;
-		}else if(currentVideoBitrate>250000){
-			resolutionFromBitrate=INIT_VIDEO_RES_720;
-		}else if(currentVideoBitrate>100000){
-			resolutionFromBitrate=INIT_VIDEO_RES_480;
-		}else{
-			resolutionFromBitrate=INIT_VIDEO_RES_360;
-		}
 	}
 	return std::min(peerMaxVideoResolution, resolutionFromBitrate);
-}
-
-void VideoPacketSender::SendStreamCSD(){
-	assert(stm->csdIsValid);
-
-	//SendExtra(buf, EXTRA_TYPE_STREAM_CSD);
 }

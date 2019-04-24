@@ -3303,7 +3303,7 @@ void VoIPController::SendPacketReliably(unsigned char type, unsigned char *data,
 void VoIPController::SendExtra(Buffer &data, unsigned char type){
 	ENFORCE_MSG_THREAD;
 
-	LOGV("Sending extra type %u length %lu", type, (unsigned int)data.Length());
+	LOGV("Sending extra type %u length %u", type, (unsigned int)data.Length());
 	for(vector<UnacknowledgedExtraData>::iterator x=currentExtras.begin();x!=currentExtras.end();++x){
 		if(x->type==type){
 			x->firstContainingSeq=0;

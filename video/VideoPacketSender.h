@@ -42,7 +42,6 @@ namespace tgvoip{
 
 			void SendFrame(const Buffer& frame, uint32_t flags, uint32_t rotation);
 			int GetVideoResolutionForCurrentBitrate();
-			void SendStreamCSD();
 
 			VideoSource* source=NULL;
 			std::shared_ptr<VoIPController::Stream> stm;
@@ -55,6 +54,7 @@ namespace tgvoip{
 			uint32_t videoPacketLossCount=0;
 			uint32_t currentVideoBitrate=0;
 			double lastVideoResolutionChangeTime=0.0;
+			double sourceChangeTime=0.0;
 
 			std::vector<Buffer> packetsForFEC;
 			size_t fecFrameCount=0;

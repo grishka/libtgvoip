@@ -49,6 +49,7 @@ namespace tgvoip{
 			int width;
 			int height;
 			bool streamEnabled=true;
+			bool streamPaused=false;
 			uint32_t codec;
 			uint16_t rotation=0;
 			jobject jobj;

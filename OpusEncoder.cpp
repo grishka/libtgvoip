@@ -41,7 +41,7 @@ tgvoip::OpusEncoder::OpusEncoder(MediaStreamItf *source, bool needSecondary):que
 	opus_encoder_ctl(enc, OPUS_SET_PACKET_LOSS_PERC(1));
 	opus_encoder_ctl(enc, OPUS_SET_INBAND_FEC(1));
 	opus_encoder_ctl(enc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
-	opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_FULLBAND));
+	opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_AUTO));
 	requestedBitrate=20000;
 	currentBitrate=0;
 	running=false;
@@ -59,9 +59,7 @@ tgvoip::OpusEncoder::OpusEncoder(MediaStreamItf *source, bool needSecondary):que
 		secondaryEncoder=opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, NULL);
 		opus_encoder_ctl(secondaryEncoder, OPUS_SET_COMPLEXITY(10));
 		opus_encoder_ctl(secondaryEncoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
-		//opus_encoder_ctl(secondaryEncoder, OPUS_SET_VBR(0));
 		opus_encoder_ctl(secondaryEncoder, OPUS_SET_BITRATE(8000));
-		opus_encoder_ctl(secondaryEncoder, OPUS_SET_BANDWIDTH(secondaryEnabledBandwidth));
 	}else{
 		secondaryEncoder=NULL;
 	}
@@ -107,9 +105,11 @@ void tgvoip::OpusEncoder::Encode(int16_t* data, size_t len){
 		levelMeter->Update(data, len);
 	if(secondaryEncoderEnabled!=wasSecondaryEncoderEnabled){
 		wasSecondaryEncoderEnabled=secondaryEncoderEnabled;
-		opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(secondaryEncoderEnabled ? secondaryEnabledBandwidth : OPUS_BANDWIDTH_FULLBAND));
 	}
 	int32_t r=opus_encode(enc, data, static_cast<int>(len), buffer, 4096);
+//	int bw;
+//	opus_encoder_ctl(enc, OPUS_GET_BANDWIDTH(&bw));
+//	LOGV("Opus bandwidth: %d", bw);
 	if(r<=0){
 		LOGE("Error encoding: %d", r);
 	}else if(r==1){
@@ -185,27 +185,21 @@ void tgvoip::OpusEncoder::RunThread(){
 					if(vadMode){
 						if(frameHasVoice){
 							opus_encoder_ctl(enc, OPUS_SET_BITRATE(currentBitrate));
-							opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(vadModeVoiceBandwidth));
 							if(secondaryEncoder){
 								opus_encoder_ctl(secondaryEncoder, OPUS_SET_BITRATE(currentBitrate));
-								opus_encoder_ctl(secondaryEncoder, OPUS_SET_BANDWIDTH(vadModeVoiceBandwidth));
 							}
 						}else{
 							opus_encoder_ctl(enc, OPUS_SET_BITRATE(vadNoVoiceBitrate));
-							opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(vadModeNoVoiceBandwidth));
 							if(secondaryEncoder){
 								opus_encoder_ctl(secondaryEncoder, OPUS_SET_BITRATE(vadNoVoiceBitrate));
-								opus_encoder_ctl(secondaryEncoder, OPUS_SET_BANDWIDTH(vadModeNoVoiceBandwidth));
 							}
 						}
 						wasVadMode=true;
 					}else if(wasVadMode){
 						wasVadMode=false;
 						opus_encoder_ctl(enc, OPUS_SET_BITRATE(currentBitrate));
-						opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(secondaryEncoderEnabled ? secondaryEnabledBandwidth : OPUS_AUTO));
 						if(secondaryEncoder){
 							opus_encoder_ctl(secondaryEncoder, OPUS_SET_BITRATE(currentBitrate));
-							opus_encoder_ctl(secondaryEncoder, OPUS_SET_BANDWIDTH(secondaryEnabledBandwidth));
 						}
 					}
 					Encode(frame, 960*packetsPerFrame);

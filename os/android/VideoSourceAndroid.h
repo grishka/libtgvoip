@@ -23,6 +23,7 @@ namespace tgvoip{
 			void SetStreamParameters(std::vector<Buffer> csd, unsigned int width, unsigned int height);
 			virtual void RequestKeyFrame() override;
 			virtual void SetBitrate(uint32_t bitrate) override;
+			void SetStreamPaused(bool paused);
 
 			static std::vector<uint32_t> availableEncoders;
 		private:

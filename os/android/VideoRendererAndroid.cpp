@@ -127,7 +127,7 @@ void VideoRendererAndroid::RunThread(){
 			}
 			env->CallVoidMethod(jobj, resetMethod, env->NewStringUTF(codecStr.c_str()), (jint)width, (jint)height, jcsd);
 		}else if(request.type==Request::Type::UpdateStreamState){
-			env->CallVoidMethod(jobj, setStreamEnabledMethod, streamEnabled);
+			env->CallVoidMethod(jobj, setStreamEnabledMethod, streamEnabled, streamPaused);
 		}
 	}
 	free(buf);
@@ -150,5 +150,10 @@ void VideoRendererAndroid::SetRotation(uint16_t rotation){
 }
 
 void VideoRendererAndroid::SetStreamPaused(bool paused){
-
+    streamPaused=paused;
+	Request req{
+			Buffer(0),
+			Request::Type::UpdateStreamState
+	};
+	queue.Put(std::move(req));
 }
