@@ -294,7 +294,7 @@ int VideoPacketSender::GetVideoResolutionForCurrentBitrate(){
 
 	int peerMaxVideoResolution=GetProtocolInfo().maxVideoResolution;
 	int resolutionFromBitrate=INIT_VIDEO_RES_1080;
-	if(VoIPController::GetCurrentTime()-sourceChangeTime<10.0){
+	if(VoIPController::GetCurrentTime()-sourceChangeTime>10.0){
 		// TODO: probably move this to server config
 		if(stm->codec==CODEC_AVC || stm->codec==CODEC_VP8){
 			if(currentVideoBitrate>400000){

@@ -188,6 +188,7 @@ void PacketReassembler::Packet::AddFragment(Buffer pkt, uint32_t fragmentIndex){
 		parts.push_back(std::move(pkt));
 		//LOGV("add1");
 	}else if(parts.size()>fragmentIndex){
+		assert(parts[fragmentIndex].IsEmpty());
 		parts[fragmentIndex]=std::move(pkt);
 		//LOGV("add2");
 	}else{
@@ -197,7 +198,9 @@ void PacketReassembler::Packet::AddFragment(Buffer pkt, uint32_t fragmentIndex){
 		//LOGV("add3");
 	}
 	receivedPartCount++;
-	assert(parts.size()>=receivedPartCount);
+	//assert(parts.size()>=receivedPartCount);
+	if(parts.size()<receivedPartCount)
+		LOGW("Received %u parts but parts.size is %u", (unsigned int)receivedPartCount, (unsigned int)parts.size());
 }
 
 Buffer PacketReassembler::Packet::Reassemble(){
