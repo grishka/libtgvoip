@@ -729,7 +729,6 @@ namespace tgvoip{
 		bool didAddIPv6Relays;
 		bool didSendIPv6Endpoint;
 		int publicEndpointsReqCount=0;
-		MessageThread messageThread;
 		bool wasEstablished=false;
 		bool receivedFirstStreamPacket=false;
 		std::atomic<unsigned int> unsentStreamPackets;
@@ -747,6 +746,8 @@ namespace tgvoip{
 		effects::Volume inputVolume;
 
 		std::vector<uint32_t> peerVideoDecoders;
+
+		MessageThread messageThread;
 
 		// Locked whenever the endpoints vector is modified (but not endpoints themselves) and whenever iterated outside of messageThread.
 		// After the call is started, only messageThread is allowed to modify the endpoints vector.

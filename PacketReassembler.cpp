@@ -33,6 +33,10 @@ void PacketReassembler::AddFragment(Buffer pkt, unsigned int fragmentIndex, unsi
 				LOGE("Received fragment total count %u inconsistent with previous %u", fragmentCount, packet->partCount);
 				return;
 			}
+			if(fragmentIndex>=packet->partCount){
+				LOGE("Received fragment index %u is greater than total %u", fragmentIndex, fragmentCount);
+				return;
+			}
 			packet->AddFragment(std::move(pkt), fragmentIndex);
 			return;
 		}
@@ -42,8 +46,12 @@ void PacketReassembler::AddFragment(Buffer pkt, unsigned int fragmentIndex, unsi
 		fseq+=256;
 	//LOGV("fseq: %u", (unsigned int)fseq);
 
-	if(pts<maxTimestamp){
+	/*if(pts<maxTimestamp){
 		LOGW("Received fragment doesn't belong here (ts=%u < maxTs=%u)", pts, maxTimestamp);
+		return;
+	}*/
+	if(lastFrameSeq>3 && fseq<lastFrameSeq-3){
+		LOGW("Packet too late (fseq=%u, lastFseq=%u)", fseq, lastFrameSeq);
 		return;
 	}
 	if(fragmentIndex>=fragmentCount){
