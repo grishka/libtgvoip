@@ -79,7 +79,7 @@ void AudioInput::EnumerateDevices(std::vector<AudioInputDevice>& devs){
 #elif defined(WITHOUT_PULSE)
 	AudioInputALSA::EnumerateDevices(devs);
 #else
-	AudioInputPulse::EnumerateDevices(devs)
+	AudioInputPulse::EnumerateDevices(devs);
 #endif
 #endif
 }
