@@ -15,6 +15,7 @@
           'tgvoip_src_loc': '.',
           'official_build_target%': '',
           'linux_path_opus_include%': '<(DEPTH)/../../../Libraries/opus/include',
+          'dynamic_msvc_runtime%': 0,
         },
         'include_dirs': [
           '<(tgvoip_src_loc)/webrtc_dsp',
@@ -859,8 +860,15 @@
                   'msvs_settings': {
                     'VCCLCompilerTool': {
                       'Optimization': '0',        # Disabled (/Od)
-                      'RuntimeLibrary': '1',      # Multi-threaded Debug (/MTd)
                       'RuntimeTypeInfo': 'true',
+
+                      'conditions': [
+                        [ '<(dynamic_msvc_runtime) == 0', {
+                          'RuntimeLibrary': 1,  # Multi-threaded Debug, static (/MTd)
+                        }, {
+                          'RuntimeLibrary': 3,  # Multi-threaded Debug, dynamic (/MDd)
+                        }],
+                      ],
                     },
                     'VCLibrarianTool': {
                       'AdditionalOptions': [
@@ -882,9 +890,16 @@
                       'InlineFunctionExpansion': '2',       # Any suitable (/Ob2)
                       'EnableIntrinsicFunctions': 'true',   # Yes (/Oi)
                       'FavorSizeOrSpeed': '1',              # Favor fast code (/Ot)
-                      'RuntimeLibrary': '0',                # Multi-threaded (/MT)
                       'EnableEnhancedInstructionSet': '2',  # Streaming SIMD Extensions 2 (/arch:SSE2)
                       'WholeProgramOptimization': 'true',   # /GL
+
+                      'conditions': [
+                        [ '<(dynamic_msvc_runtime) == 0', {
+                          'RuntimeLibrary': 0,  # Multi-threaded, static (/MT)
+                        }, {
+                          'RuntimeLibrary': 2,  # Multi-threaded, dynamic (/MD)
+                        }],
+                      ],
                     },
                     'VCLibrarianTool': {
                       'AdditionalOptions': [
