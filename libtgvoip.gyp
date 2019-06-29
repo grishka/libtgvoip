@@ -66,6 +66,8 @@
           '<(tgvoip_src_loc)/MessageThread.h',
           '<(tgvoip_src_loc)/audio/AudioIO.cpp',
           '<(tgvoip_src_loc)/audio/AudioIO.h',
+          '<(tgvoip_src_loc)/audio/AudioIOCallback.cpp',
+          '<(tgvoip_src_loc)/audio/AudioIOCallback.h',
           '<(tgvoip_src_loc)/video/ScreamCongestionController.cpp',
           '<(tgvoip_src_loc)/video/ScreamCongestionController.h',
           '<(tgvoip_src_loc)/video/VideoSource.cpp',
