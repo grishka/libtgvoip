@@ -15,6 +15,7 @@
           'tgvoip_src_loc': '.',
           'official_build_target%': '',
           'linux_path_opus_include%': '<(DEPTH)/../../../Libraries/opus/include',
+          'dynamic_msvc_runtime%': 0,
         },
         'include_dirs': [
           '<(tgvoip_src_loc)/webrtc_dsp',
@@ -795,20 +796,20 @@
                     ],
                   },
                   'sources': [
-                   '<(tgvoip_src_loc)/os/darwin/TGVVideoRenderer.mm',
-                   '<(tgvoip_src_loc)/os/darwin/TGVVideoRenderer.h',
-                   '<(tgvoip_src_loc)/os/darwin/TGVVideoSource.mm',
-                   '<(tgvoip_src_loc)/os/darwin/TGVVideoSource.h',
-                   '<(tgvoip_src_loc)/os/darwin/VideoToolboxEncoderSource.mm',
-                   '<(tgvoip_src_loc)/os/darwin/VideoToolboxEncoderSource.h',
-                   '<(tgvoip_src_loc)/os/darwin/SampleBufferDisplayLayerRenderer.mm',
-                   '<(tgvoip_src_loc)/os/darwin/SampleBufferDisplayLayerRenderer.h',
+                    '<(tgvoip_src_loc)/os/darwin/TGVVideoRenderer.mm',
+                    '<(tgvoip_src_loc)/os/darwin/TGVVideoRenderer.h',
+                    '<(tgvoip_src_loc)/os/darwin/TGVVideoSource.mm',
+                    '<(tgvoip_src_loc)/os/darwin/TGVVideoSource.h',
+                    '<(tgvoip_src_loc)/os/darwin/VideoToolboxEncoderSource.mm',
+                    '<(tgvoip_src_loc)/os/darwin/VideoToolboxEncoderSource.h',
+                    '<(tgvoip_src_loc)/os/darwin/SampleBufferDisplayLayerRenderer.mm',
+                    '<(tgvoip_src_loc)/os/darwin/SampleBufferDisplayLayerRenderer.h',
                   ],
                 }],
                 ['"<(official_build_target)" == "macstore"', {
-                 'defines': [
-                  'TGVOIP_NO_OSX_PRIVATE_API',
-                 ],
+                  'defines': [
+                    'TGVOIP_NO_OSX_PRIVATE_API',
+                  ],
                 }],
               ],
             },
@@ -833,11 +834,11 @@
               'msvs_settings': {
                 'VCCLCompilerTool': {
                   'ProgramDataBaseFileName': '$(OutDir)\\$(ProjectName).pdb',
-                  'DebugInformationFormat': '3',          # Program Database (/Zi)
+                  'DebugInformationFormat': '3',  # Program Database (/Zi)
                   'AdditionalOptions': [
-                    '/MP',   # Enable multi process build.
-                    '/EHsc', # Catch C++ exceptions only, extern C functions never throw a C++ exception.
-                    '/wd4068', # Disable "warning C4068: unknown pragma"
+                    '/MP',      # Enable multi process build.
+                    '/EHsc',    # Catch C++ exceptions only, extern C functions never throw a C++ exception.
+                    '/wd4068',  # Disable "warning C4068: unknown pragma"
                   ],
                   'TreatWChar_tAsBuiltInType': 'false',
                 },
@@ -859,15 +860,22 @@
                   ],
                   'msvs_settings': {
                     'VCCLCompilerTool': {
-                      'Optimization': '0',                # Disabled (/Od)
-                      'RuntimeLibrary': '1',              # Multi-threaded Debug (/MTd)
+                      'Optimization': '0',        # Disabled (/Od)
                       'RuntimeTypeInfo': 'true',
+
+                      'conditions': [
+                        [ '<(dynamic_msvc_runtime) == 0', {
+                          'RuntimeLibrary': 1,  # Multi-threaded Debug, static (/MTd)
+                        }, {
+                          'RuntimeLibrary': 3,  # Multi-threaded Debug, dynamic (/MDd)
+                        }],
+                      ],
                     },
                     'VCLibrarianTool': {
                       'AdditionalOptions': [
-                        '/NODEFAULTLIB:LIBCMT'
-                      ]
-                    }
+                        '/NODEFAULTLIB:LIBCMT',
+                      ],
+                    },
                   },
                 },
                 'Release': {
@@ -879,18 +887,25 @@
                   ],
                   'msvs_settings': {
                     'VCCLCompilerTool': {
-                      'Optimization': '2',                 # Maximize Speed (/O2)
-                      'InlineFunctionExpansion': '2',      # Any suitable (/Ob2)
-                      'EnableIntrinsicFunctions': 'true',  # Yes (/Oi)
-                      'FavorSizeOrSpeed': '1',             # Favor fast code (/Ot)
-                      'RuntimeLibrary': '0',               # Multi-threaded (/MT)
-                      'EnableEnhancedInstructionSet': '2', # Streaming SIMD Extensions 2 (/arch:SSE2)
-                      'WholeProgramOptimization': 'true',  # /GL
+                      'Optimization': '2',                  # Maximize Speed (/O2)
+                      'InlineFunctionExpansion': '2',       # Any suitable (/Ob2)
+                      'EnableIntrinsicFunctions': 'true',   # Yes (/Oi)
+                      'FavorSizeOrSpeed': '1',              # Favor fast code (/Ot)
+                      'EnableEnhancedInstructionSet': '2',  # Streaming SIMD Extensions 2 (/arch:SSE2)
+                      'WholeProgramOptimization': 'true',   # /GL
+
+                      'conditions': [
+                        [ '<(dynamic_msvc_runtime) == 0', {
+                          'RuntimeLibrary': 0,  # Multi-threaded, static (/MT)
+                        }, {
+                          'RuntimeLibrary': 2,  # Multi-threaded, dynamic (/MD)
+                        }],
+                      ],
                     },
                     'VCLibrarianTool': {
                       'AdditionalOptions': [
                         '/LTCG',
-                      ]
+                      ],
                     },
                   },
                 },
@@ -908,7 +923,7 @@
                   'cflags_cc': [
                     '-msse2',
                   ],
-                }]
+                }],
               ],
               'direct_dependent_settings': {
                 'libraries': [
@@ -920,4 +935,4 @@
         ],
       },
     ],
-  }
+}
