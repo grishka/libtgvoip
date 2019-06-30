@@ -709,7 +709,7 @@
           '<(tgvoip_src_loc)/webrtc_dsp/common_audio/vad/vad_core.c',
           '<(tgvoip_src_loc)/webrtc_dsp/common_audio/vad/vad_sp.h',
           '<(tgvoip_src_loc)/webrtc_dsp/common_audio/vad/vad_filterbank.h',
-          '<(tgvoip_src_loc)/webrtc_dsp/common_audio/vad/vad_gmm.c', 
+          '<(tgvoip_src_loc)/webrtc_dsp/common_audio/vad/vad_gmm.c',
 
           # ARM/NEON sources
           # TODO check if there's a good way to make these compile with ARM ports of TDesktop
@@ -920,7 +920,7 @@
               ],
               'conditions': [
                 [ '"<!(uname -m)" == "i686"', {
-                  'cflags_cc': [
+                  'cflags': [
                     '-msse2',
                   ],
                 }],
