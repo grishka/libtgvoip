@@ -137,7 +137,7 @@ namespace tgvoip{
 		};
 
 		Endpoint(int64_t id, uint16_t port, const IPv4Address& address, const IPv6Address& v6address, Type type, unsigned char* peerTag);
-		Endpoint(int64_t id, uint16_t port, const NetworkAddress address, const NetworkAddress v6address, Type type, unsigned char* peerTag);
+		Endpoint(int64_t id, uint16_t port, const NetworkAddress& address, const NetworkAddress& v6address, Type type, unsigned char* peerTag);
 		Endpoint();
 		~Endpoint();
 		const NetworkAddress& GetAddress() const;
