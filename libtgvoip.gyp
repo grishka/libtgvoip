@@ -825,6 +825,7 @@
               'libraries': [
                 'winmm',
                 'ws2_32',
+                'iphlpapi',
                 'kernel32',
                 'user32',
               ],
