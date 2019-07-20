@@ -7,13 +7,13 @@
 #ifndef TGVOIP_VOIPSERVERCONFIG_H
 #define TGVOIP_VOIPSERVERCONFIG_H
 
-#include <map>
+#include <memory>
 #include <string>
 #include <stdint.h>
-#include "threading.h"
-#include "json11.hpp"
 
 namespace tgvoip{
+
+class ServerConfigImpl;
 
 class ServerConfig{
 public:
@@ -27,10 +27,7 @@ public:
 	void Update(std::string jsonString);
 
 private:
-	static ServerConfig* sharedInstance;
-	bool ContainsKey(std::string key);
-    json11::Json config;
-	Mutex mutex;
+	std::shared_ptr<ServerConfigImpl> p_impl;
 };
 }
 
