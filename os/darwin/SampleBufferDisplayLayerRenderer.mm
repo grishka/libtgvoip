@@ -45,34 +45,34 @@ void SampleBufferDisplayLayerRenderer::Reset(uint32_t codec, unsigned int width,
 		LOGI("size from formatDesc: %f x %f", rect.size.width, rect.size.height);
 	}else if(codec==CODEC_HEVC){
 		if(@available(iOS 11.0, *)){
-    		if(csd.size()!=1){
-    			LOGE("HEVC requires exactly 1 CSD buffer");
-    			return;
-    		}
-    		int offsets[]={0, 0, 0};
-    		Buffer& buf=csd[0];
-    		int currentNAL=0;
-    		for(int i=0;i<buf.Length()-4;i++){
-    			if(buf[i]==0 && buf[i+1]==0 && buf[i+2]==0 && buf[i+3]==1){
-    				offsets[currentNAL]=i+4;
-    				currentNAL++;
-    			}
-    		}
-    		LOGV("CSD NAL offsets: %d %d %d", offsets[0], offsets[1], offsets[2]);
-    		if(offsets[0]==0 || offsets[1]==0 || offsets[2]==0){
-    			LOGE("Error splitting CSD buffer");
-    			return;
-    		}
-    		const uint8_t* params[]={*buf+offsets[0], *buf+offsets[1], *buf+offsets[2]};
-    		size_t paramSizes[]={(size_t)((offsets[1]-4)-offsets[0]), (size_t)((offsets[2]-4)-offsets[1]), (size_t)(buf.Length()-offsets[2])};
-    		OSStatus status=CMVideoFormatDescriptionCreateFromHEVCParameterSets(NULL, 3, params, paramSizes, 4, NULL, &formatDesc);
-    		if(status!=noErr){
+			if(csd.size()!=1){
+				LOGE("HEVC requires exactly 1 CSD buffer");
+				return;
+			}
+			int offsets[]={0, 0, 0};
+			Buffer& buf=csd[0];
+			int currentNAL=0;
+			for(int i=0;i<buf.Length()-4;i++){
+				if(buf[i]==0 && buf[i+1]==0 && buf[i+2]==0 && buf[i+3]==1){
+					offsets[currentNAL]=i+4;
+					currentNAL++;
+				}
+			}
+			LOGV("CSD NAL offsets: %d %d %d", offsets[0], offsets[1], offsets[2]);
+			if(offsets[0]==0 || offsets[1]==0 || offsets[2]==0){
+				LOGE("Error splitting CSD buffer");
+				return;
+			}
+			const uint8_t* params[]={*buf+offsets[0], *buf+offsets[1], *buf+offsets[2]};
+			size_t paramSizes[]={(size_t)((offsets[1]-4)-offsets[0]), (size_t)((offsets[2]-4)-offsets[1]), (size_t)(buf.Length()-offsets[2])};
+			OSStatus status=CMVideoFormatDescriptionCreateFromHEVCParameterSets(NULL, 3, params, paramSizes, 4, NULL, &formatDesc);
+			if(status!=noErr){
 				LOGE("CMVideoFormatDescriptionCreateFromHEVCParameterSets failed: %d", status);
 				return;
 			}
-    		CGRect rect=CMVideoFormatDescriptionGetCleanAperture(formatDesc, true);
-    		LOGI("size from formatDesc: %f x %f", rect.size.width, rect.size.height);
-			
+			CGRect rect=CMVideoFormatDescriptionGetCleanAperture(formatDesc, true);
+			LOGI("size from formatDesc: %f x %f", rect.size.width, rect.size.height);
+
 		}else{
 			LOGE("HEVC not available on this OS");
 		}
@@ -94,9 +94,9 @@ void SampleBufferDisplayLayerRenderer::DecodeAndDisplay(Buffer frame, uint32_t p
 	BufferOutputStream out(frame.Length());
 	for(uint32_t i=0;i<nalStartOffsets.size();i++){
 		uint32_t length=(i==nalStartOffsets.size()-1 ? (uint32_t)frame.Length() : nalStartOffsets[i+1])-nalStartOffsets[i];
-    	uint8_t lenBytes[]={(uint8_t)(length >> 24), (uint8_t)(length >> 16), (uint8_t)(length >> 8), (uint8_t)length};
-    	out.WriteBytes(lenBytes, 4);
-    	out.WriteBytes(frame, nalStartOffsets[i], length);
+		uint8_t lenBytes[]={(uint8_t)(length >> 24), (uint8_t)(length >> 16), (uint8_t)(length >> 8), (uint8_t)length};
+		out.WriteBytes(lenBytes, 4);
+		out.WriteBytes(frame, nalStartOffsets[i], length);
 	}
 
 	CMBlockBufferRef blockBuffer;

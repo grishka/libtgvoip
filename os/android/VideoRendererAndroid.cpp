@@ -55,7 +55,7 @@ void VideoRendererAndroid::Reset(uint32_t codec, unsigned int width, unsigned in
 		Request::Type::UpdateStreamState
 	};
 	queue.Put(std::move(req2));
-	
+
 	if(!thread){
 		thread=new Thread(std::bind(&VideoRendererAndroid::RunThread, this));
 		thread->Start();

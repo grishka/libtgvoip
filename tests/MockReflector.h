@@ -31,7 +31,7 @@ namespace tgvoip{
 			void Stop();
 			void SetDropAllPackets(bool drop);
 			static std::array<std::array<uint8_t, 16>, 2> GeneratePeerTags();
-			
+
 		private:
 			void RunThread();
 			struct ClientPair{

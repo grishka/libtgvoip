@@ -44,7 +44,7 @@ EchoCanceller::EchoCanceller(bool enableAEC, bool enableNS, bool enableAGC){
 	config.high_pass_filter.enabled = enableAEC;
 	config.gain_controller2.enabled = enableAGC;
 	apm->ApplyConfig(config);
-	
+
 	webrtc::NoiseSuppression::Level nsLevel;
 #ifdef __APPLE__
 	switch(ServerConfig::GetSharedInstance()->GetInt("webrtc_ns_level_vpio", 0)){
@@ -112,15 +112,15 @@ void EchoCanceller::Stop(){
 
 
 void EchoCanceller::SpeakerOutCallback(unsigned char* data, size_t len){
-    if(len!=960*2 || !enableAEC || !isOn)
+	if(len!=960*2 || !enableAEC || !isOn)
 		return;
 #ifndef TGVOIP_NO_DSP
-    try{
-    	Buffer buf=farendBufferPool.Get();
-    	buf.CopyFrom(data, 0, 960*2);
-    	farendQueue->Put(std::move(buf));
+	try{
+		Buffer buf=farendBufferPool.Get();
+		buf.CopyFrom(data, 0, 960*2);
+		farendQueue->Put(std::move(buf));
 	}catch(std::bad_alloc& x){
-    	LOGW("Echo canceller can't keep up with real time");
+		LOGW("Echo canceller can't keep up with real time");
 	}
 #endif
 }
@@ -161,17 +161,17 @@ void EchoCanceller::ProcessInput(int16_t* inOut, size_t numSamples, bool& hasVoi
 
 	memcpy(audioFrame->mutable_data(), inOut, 480*2);
 	if(enableAEC)
-    	apm->set_stream_delay_ms(delay);
+		apm->set_stream_delay_ms(delay);
 	apm->ProcessStream(audioFrame);
 	if(enableVAD)
-    	hasVoice=apm->voice_detection()->stream_has_voice();
+		hasVoice=apm->voice_detection()->stream_has_voice();
 	memcpy(inOut, audioFrame->data(), 480*2);
 	memcpy(audioFrame->mutable_data(), inOut+480, 480*2);
 	if(enableAEC)
-    	apm->set_stream_delay_ms(delay);
+		apm->set_stream_delay_ms(delay);
 	apm->ProcessStream(audioFrame);
 	if(enableVAD){
-    	hasVoice=hasVoice || apm->voice_detection()->stream_has_voice();
+		hasVoice=hasVoice || apm->voice_detection()->stream_has_voice();
 	}
 	memcpy(inOut+480, audioFrame->data(), 480*2);
 #endif

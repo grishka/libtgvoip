@@ -24,7 +24,7 @@ public:
 	void HandleBufferCallback(AudioBufferList* ioData);
 	static void EnumerateDevices(std::vector<AudioOutputDevice>& devs);
 	virtual void SetCurrentDevice(std::string deviceID);
-	
+
 private:
 	static OSStatus BufferCallback(void *inRefCon, AudioUnitRenderActionFlags *ioActionFlags, const AudioTimeStamp *inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList *ioData);
 	static OSStatus DefaultDeviceChangedCallback(AudioObjectID inObjectID, UInt32 inNumberAddresses, const AudioObjectPropertyAddress *inAddresses, void *inClientData);

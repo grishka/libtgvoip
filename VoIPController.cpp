@@ -948,7 +948,7 @@ void VoIPController::SetConfig(const Config& cfg){
 
 void VoIPController::SetPersistentState(vector<uint8_t> state){
 	using namespace json11;
-	
+
 	if(state.empty())
 		return;
 	string jsonErr;
@@ -969,18 +969,18 @@ void VoIPController::SetPersistentState(vector<uint8_t> state){
 
 vector<uint8_t> VoIPController::GetPersistentState(){
 	using namespace json11;
-	
+
 	Json::object obj=Json::object{
 		{"ver", 1},
 	};
 	if(proxyProtocol==PROXY_SOCKS5){
 		char pbuf[128];
 		snprintf(pbuf, sizeof(pbuf), "%s:%u", proxyAddress.c_str(), proxyPort);
-    	obj.insert({"proxy", Json::object{
-    		{"server", string(pbuf)},
+		obj.insert({"proxy", Json::object{
+			{"server", string(pbuf)},
 			{"udp", proxySupportsUDP},
 			{"tcp", proxySupportsTCP}
-    	}});
+		}});
 	}
 	string _jstr=Json(obj).dump();
 	const char* jstr=_jstr.c_str();
@@ -1610,17 +1610,17 @@ void VoIPController::InitUDPProxy(){
 	string proxyHostPort(sbuf);
 	if(proxyHostPort==lastTestedProxyServer && !proxySupportsUDP){
 		LOGI("Proxy does not support UDP - using UDP directly instead");
-        messageThread.Post(bind(&VoIPController::ResetUdpAvailability, this));
+		messageThread.Post(bind(&VoIPController::ResetUdpAvailability, this));
 		return;
 	}
-	
+
 	NetworkSocket* tcp=NetworkSocket::Create(NetworkProtocol::TCP);
 	tcp->Connect(resolvedProxyAddress, proxyPort);
-	
+
 	vector<NetworkSocket*> writeSockets;
 	vector<NetworkSocket*> readSockets;
 	vector<NetworkSocket*> errorSockets;
-	
+
 	while(!tcp->IsFailed() && !tcp->IsReadyToSend()){
 		writeSockets.push_back(tcp);
 		if(!NetworkSocket::Select(readSockets, writeSockets, errorSockets, selectCanceller)){
@@ -1630,7 +1630,7 @@ void VoIPController::InitUDPProxy(){
 		}
 	}
 	LOGV("UDP proxy control socket ready to send");
-    NetworkSocketSOCKS5Proxy* udpProxy=new NetworkSocketSOCKS5Proxy(tcp, realUdpSocket, proxyUsername, proxyPassword);
+	NetworkSocketSOCKS5Proxy* udpProxy=new NetworkSocketSOCKS5Proxy(tcp, realUdpSocket, proxyUsername, proxyPassword);
 	udpProxy->OnReadyToSend();
 	writeSockets.clear();
 	while(!udpProxy->IsFailed() && !tcp->IsFailed() && !udpProxy->IsReadyToSend()){
@@ -1672,7 +1672,7 @@ void VoIPController::RunRecvThread(){
 		udpPingTimeoutID=messageThread.Post(std::bind(&VoIPController::SendUdpPings, this), 0.0, 0.5);
 	}
 	while(runReceiver){
-		
+
 		if(proxyProtocol==PROXY_SOCKS5 && needReInitUdpProxy){
 			InitUDPProxy();
 			needReInitUdpProxy=false;
@@ -1685,7 +1685,7 @@ void VoIPController::RunRecvThread(){
 		errorSockets.push_back(realUdpSocket);
 		if(!realUdpSocket->IsReadyToSend())
 			writeSockets.push_back(realUdpSocket);
-		
+
 		{
 			MutexGuard m(endpointsMutex);
 			for(pair<const int64_t, Endpoint>& _e:endpoints){
@@ -1697,7 +1697,7 @@ void VoIPController::RunRecvThread(){
 						if(!e.socket->IsReadyToSend()){
 							NetworkSocketSOCKS5Proxy* proxy=dynamic_cast<NetworkSocketSOCKS5Proxy*>(&*e.socket);
 							if(!proxy || proxy->NeedSelectForSending())
-    							writeSockets.push_back(&*e.socket);
+								writeSockets.push_back(&*e.socket);
 						}
 					}
 				}
@@ -1736,7 +1736,7 @@ void VoIPController::RunRecvThread(){
 
 		for(NetworkSocket*& socket:readSockets){
 			//while(packet.length){
-            NetworkPacket packet=socket->Receive();
+			NetworkPacket packet=socket->Receive();
 			if(packet.address.IsEmpty()){
 				LOGE("Packet has null address. This shouldn't happen.");
 				continue;
@@ -1931,7 +1931,7 @@ void VoIPController::ProcessIncomingPacket(NetworkPacket &packet, Endpoint& srcE
 				if(waitingForRelayPeerInfo){
 					Endpoint p2p(p2pID, (uint16_t) peerPort, NetworkAddress::IPv4(peerAddr), NetworkAddress::Empty(), Endpoint::Type::UDP_P2P_INET, peerTag);
 					{
-    					MutexGuard m(endpointsMutex);
+						MutexGuard m(endpointsMutex);
 						endpoints[p2pID]=p2p;
 					}
 					if(myAddr==peerAddr){
@@ -2693,7 +2693,7 @@ simpleAudioBlock random_id:long random_bytes:string raw_data:string = DecryptedA
 			if(!stm->packetReassembler)
 				return;
 
-            uint8_t fseq=in.ReadByte();
+			uint8_t fseq=in.ReadByte();
 			unsigned char fecScheme=in.ReadByte();
 			unsigned char prevFrameCount=in.ReadByte();
 			uint16_t fecLen=(uint16_t)in.ReadInt16();
@@ -2910,8 +2910,8 @@ bool VoIPController::SendOrEnqueuePacket(PendingOutgoingPacket pkt, bool enqueue
 	}
 	if(!canSend){
 		if(enqueue){
-    		LOGW("Not ready to send - enqueueing");
-    		sendQueue.push_back(move(pkt));
+			LOGW("Not ready to send - enqueueing");
+			sendQueue.push_back(move(pkt));
 		}
 		return false;
 	}
@@ -3087,7 +3087,7 @@ std::string VoIPController::GetPacketTypeString(unsigned char type){
 		case PKT_STREAM_EC:
 			return "stream_ec";
 	}
-    char buf[255];
+	char buf[255];
 	snprintf(buf, sizeof(buf), "unknown(%u)", type);
 	return string(buf);
 }
@@ -3509,7 +3509,7 @@ void VoIPController::SetupOutgoingVideoStream(){
 
 void VoIPController::SendUdpPings(){
 	LOGW("Send udp pings");
-    ENFORCE_MSG_THREAD;
+	ENFORCE_MSG_THREAD;
 
 	for(pair<const int64_t, Endpoint>& e:endpoints){
 		if(e.second.type==Endpoint::Type::UDP_RELAY){
@@ -3584,7 +3584,7 @@ void VoIPController::EvaluateUdpPingResults(){
 }
 
 void VoIPController::SendRelayPings(){
-    ENFORCE_MSG_THREAD;
+	ENFORCE_MSG_THREAD;
 
 	if((state==STATE_ESTABLISHED || state==STATE_RECONNECTING) && endpoints.size()>1){
 		Endpoint* _preferredRelay=&endpoints.at(preferredRelay);
@@ -3698,7 +3698,7 @@ void VoIPController::UpdateCongestion(){
 				wasExtraEC=true;
 			}
 		}
-		
+
 		if(avgSendLossCount>0.08){
 			extraEcLevel=4;
 		}else if(avgSendLossCount>0.05){

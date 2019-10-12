@@ -37,11 +37,11 @@
 		[layer flush];
 	}*/
 	LOGV("Enqueue buffer");
-    [layer enqueueSampleBuffer:buffer];
-    NSError* error=[layer error];
-    if(error){
-    	LOGE("enqueueSampleBuffer failed: %s", [error.description cStringUsingEncoding:NSUTF8StringEncoding]);
-    }
+	[layer enqueueSampleBuffer:buffer];
+	NSError* error=[layer error];
+	if(error){
+		LOGE("enqueueSampleBuffer failed: %s", [error.description cStringUsingEncoding:NSUTF8StringEncoding]);
+	}
 }
 
 - (void)_setSizeWidth: (uint16_t)width height: (uint16_t)height{

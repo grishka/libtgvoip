@@ -48,7 +48,7 @@ namespace tgvoip{
 		const VoIPController::ProtocolInfo& GetProtocolInfo(){
 			return controller->protocolInfo;
 		}
-		
+
 		void SendStreamFlags(VoIPController::Stream& stm){
 			controller->SendStreamFlags(stm);
 		}

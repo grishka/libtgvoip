@@ -175,7 +175,7 @@ namespace tgvoip {
 		virtual uint16_t GetConnectedPort();
 		virtual bool OnReadyToSend();
 		virtual bool OnReadyToReceive();
-		
+
 		bool NeedSelectForSending();
 
 	private:

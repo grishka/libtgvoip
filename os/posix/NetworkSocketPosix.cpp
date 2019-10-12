@@ -37,7 +37,7 @@ NetworkSocketPosix::NetworkSocketPosix(NetworkProtocol protocol) : NetworkSocket
 	nat64Present=false;
 	switchToV6at=0;
 	isV4Available=false;
-    fd=-1;
+	fd=-1;
 	closing=false;
 
 	tcpConnectedPort=0;
@@ -150,11 +150,11 @@ void NetworkSocketPosix::Send(NetworkPacket packet){
 				readyToSend=false;
 			}
 		}else{
-    		LOGE("error sending: %d / %s", errno, strerror(errno));
-    		if(errno==ENETUNREACH && !isV4Available && VoIPController::GetCurrentTime()<switchToV6at){
-    			switchToV6at=VoIPController::GetCurrentTime();
-    			LOGI("Network unreachable, trying NAT64");
-    		}
+			LOGE("error sending: %d / %s", errno, strerror(errno));
+			if(errno==ENETUNREACH && !isV4Available && VoIPController::GetCurrentTime()<switchToV6at){
+				switchToV6at=VoIPController::GetCurrentTime();
+				LOGI("Network unreachable, trying NAT64");
+			}
 		}
 	}else if((size_t)res!=packet.data.Length() && packet.protocol==NetworkProtocol::TCP){
 		if(!pendingOutgoingPacket.IsEmpty()){
@@ -299,12 +299,12 @@ void NetworkSocketPosix::Close(){
 	}
 	closing=true;
 	failed=true;
-	
-    if (fd>=0) {
-        shutdown(fd, SHUT_RDWR);
-        close(fd);
+
+	if (fd>=0) {
+		shutdown(fd, SHUT_RDWR);
+		close(fd);
 		fd=-1;
-    }
+	}
 }
 
 void NetworkSocketPosix::Connect(const NetworkAddress address, uint16_t port){

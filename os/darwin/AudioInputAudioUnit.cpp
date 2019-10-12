@@ -26,7 +26,7 @@ AudioInputAudioUnit::AudioInputAudioUnit(std::string deviceID, AudioUnitIO* io){
 }
 
 AudioInputAudioUnit::~AudioInputAudioUnit(){
-	
+
 }
 
 void AudioInputAudioUnit::Start(){

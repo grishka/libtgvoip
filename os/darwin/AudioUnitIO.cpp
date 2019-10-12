@@ -45,11 +45,11 @@ AudioUnitIO::AudioUnitIO(std::string inputDeviceID, std::string outputDeviceID){
 	inBufferList.mBuffers[0].mData=malloc(INPUT_BUFFER_SIZE);
 	inBufferList.mBuffers[0].mDataByteSize=INPUT_BUFFER_SIZE;
 	inBufferList.mNumberBuffers=1;
-	
+
 #if TARGET_OS_IPHONE
 	DarwinSpecific::ConfigureAudioSession();
 #endif
-	
+
 	OSStatus status;
 	AudioComponentDescription desc;
 	AudioComponent inputComponent;
@@ -60,7 +60,7 @@ AudioUnitIO::AudioUnitIO(std::string inputDeviceID, std::string outputDeviceID){
 	desc.componentManufacturer = kAudioUnitManufacturer_Apple;
 	inputComponent = AudioComponentFindNext(NULL, &desc);
 	status = AudioComponentInstanceNew(inputComponent, &unit);
-	
+
 	UInt32 flag=1;
 #if TARGET_OS_IPHONE
 	status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, kOutputBus, &flag, sizeof(flag));
@@ -68,7 +68,7 @@ AudioUnitIO::AudioUnitIO(std::string inputDeviceID, std::string outputDeviceID){
 	status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, kInputBus, &flag, sizeof(flag));
 	CHECK_AU_ERROR(status, "Error enabling AudioUnit input");
 #endif
-	
+
 #if TARGET_OS_IPHONE
 	flag=ServerConfig::GetSharedInstance()->GetBoolean("use_ios_vpio_agc", true) ? 1 : 0;
 #else
@@ -76,7 +76,7 @@ AudioUnitIO::AudioUnitIO(std::string inputDeviceID, std::string outputDeviceID){
 #endif
 	status=AudioUnitSetProperty(unit, kAUVoiceIOProperty_VoiceProcessingEnableAGC, kAudioUnitScope_Global, kInputBus, &flag, sizeof(flag));
 	CHECK_AU_ERROR(status, "Error disabling AGC");
-	
+
 	AudioStreamBasicDescription audioFormat;
 	audioFormat.mSampleRate			= 48000;
 	audioFormat.mFormatID			= kAudioFormatLinearPCM;
@@ -93,39 +93,39 @@ AudioUnitIO::AudioUnitIO(std::string inputDeviceID, std::string outputDeviceID){
 #endif
 	audioFormat.mFramesPerPacket	= 1;
 	audioFormat.mChannelsPerFrame	= 1;
-	
+
 	status = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kOutputBus, &audioFormat, sizeof(audioFormat));
 	CHECK_AU_ERROR(status, "Error setting output format");
 	status = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kInputBus, &audioFormat, sizeof(audioFormat));
 	CHECK_AU_ERROR(status, "Error setting input format");
-	
+
 	AURenderCallbackStruct callbackStruct;
-	
+
 	callbackStruct.inputProc = AudioUnitIO::BufferCallback;
 	callbackStruct.inputProcRefCon = this;
 	status = AudioUnitSetProperty(unit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Global, kOutputBus, &callbackStruct, sizeof(callbackStruct));
 	CHECK_AU_ERROR(status, "Error setting output buffer callback");
 	status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, kInputBus, &callbackStruct, sizeof(callbackStruct));
 	CHECK_AU_ERROR(status, "Error setting input buffer callback");
-	
+
 #if TARGET_OS_OSX
 	CFRunLoopRef theRunLoop = NULL;
 	AudioObjectPropertyAddress propertyAddress = { kAudioHardwarePropertyRunLoop,
 		kAudioObjectPropertyScopeGlobal,
 		kAudioObjectPropertyElementMaster };
 	status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, sizeof(CFRunLoopRef), &theRunLoop);
-	
+
 	propertyAddress.mSelector = kAudioHardwarePropertyDefaultOutputDevice;
 	propertyAddress.mScope = kAudioObjectPropertyScopeGlobal;
 	propertyAddress.mElement = kAudioObjectPropertyElementMaster;
 	AudioObjectAddPropertyListener(kAudioObjectSystemObject, &propertyAddress, AudioUnitIO::DefaultDeviceChangedCallback, this);
 	propertyAddress.mSelector = kAudioHardwarePropertyDefaultInputDevice;
 	AudioObjectAddPropertyListener(kAudioObjectSystemObject, &propertyAddress, AudioUnitIO::DefaultDeviceChangedCallback, this);
-	
-	
+
+
 #endif
-	
-	
+
+
 	input=new AudioInputAudioUnit(inputDeviceID, this);
 	output=new AudioOutputAudioUnit(outputDeviceID, this);
 }
@@ -180,7 +180,7 @@ void AudioUnitIO::EnableOutput(bool enabled){
 #if TARGET_OS_OSX && !defined(TGVOIP_NO_OSX_PRIVATE_API)
 	if(actualDuckingEnabled!=duckingEnabled){
 		actualDuckingEnabled=duckingEnabled;
-    	AudioDeviceDuck(currentOutputDeviceID, duckingEnabled ? 0.177828f : 1.0f, NULL, 0.1f);
+		AudioDeviceDuck(currentOutputDeviceID, duckingEnabled ? 0.177828f : 1.0f, NULL, 0.1f);
 	}
 #endif
 }
@@ -229,7 +229,7 @@ void AudioUnitIO::SetCurrentDevice(bool input, std::string deviceID){
 	UInt32 size=sizeof(AudioDeviceID);
 	AudioDeviceID device=0;
 	OSStatus status;
-	
+
 	if(deviceID=="default"){
 		AudioObjectPropertyAddress propertyAddress;
 		propertyAddress.mSelector = input ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice;
@@ -272,7 +272,7 @@ void AudioUnitIO::SetCurrentDevice(bool input, std::string deviceID){
 			return;
 		}
 	}
- 
+
 	status=AudioUnitSetProperty(unit,
 							  kAudioOutputUnitProperty_CurrentDevice,
 							  kAudioUnitScope_Global,
@@ -280,12 +280,12 @@ void AudioUnitIO::SetCurrentDevice(bool input, std::string deviceID){
 							  &device,
 							  size);
 	CHECK_AU_ERROR(status, "Error setting input device");
-	
+
 	if(input)
 		currentInputDevice=deviceID;
 	else
 		currentOutputDevice=deviceID;
-	
+
 	/*AudioObjectPropertyAddress propertyAddress = {
 		kAudioDevicePropertyBufferFrameSize,
 		kAudioObjectPropertyScopeGlobal,
@@ -313,7 +313,7 @@ void AudioUnitIO::SetDuckingEnabled(bool enabled){
 #ifndef TGVOIP_NO_OSX_PRIVATE_API
 	if(outputEnabled && duckingEnabled!=actualDuckingEnabled){
 		actualDuckingEnabled=enabled;
-    	AudioDeviceDuck(currentOutputDeviceID, enabled ? 0.177828f : 1.0f, NULL, 0.1f);
+		AudioDeviceDuck(currentOutputDeviceID, enabled ? 0.177828f : 1.0f, NULL, 0.1f);
 	}
 #endif
 }

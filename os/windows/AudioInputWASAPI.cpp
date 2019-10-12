@@ -106,7 +106,7 @@ void AudioInputWASAPI::Start(){
 	if(!thread){
 		thread=CreateThread(NULL, 0, AudioInputWASAPI::StartThread, this, 0, NULL);
 	}
-	
+
 	if(audioClient && !started){
 		LOGI("audioClient->Start");
 		audioClient->Start();
@@ -155,7 +155,7 @@ void AudioInputWASAPI::EnumerateDevices(std::vector<tgvoip::AudioInputDevice>& d
 		res=device->OpenPropertyStore(STGM_READ, &propStore);
 		SafeRelease(&device);
 		SCHECK_RES(res, "OpenPropertyStore");
-		
+
 		PROPVARIANT friendlyName;
 		PropVariantInit(&friendlyName);
 		res=propStore->GetValue(PKEY_Device_FriendlyName, &friendlyName);
@@ -260,7 +260,7 @@ void AudioInputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 		failed=true;
 		return;
 	}
-	
+
 	res=device->Activate(__uuidof(IAudioClient), CLSCTX_INPROC_SERVER, NULL, (void**)&audioClient);
 	CHECK_RES(res, "device->Activate");
 #else

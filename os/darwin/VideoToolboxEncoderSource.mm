@@ -85,7 +85,7 @@ void VideoToolboxEncoderSource::Reset(uint32_t codec, int maxResolution){
 		lastFrameRate=targetFrameRate;
 		[objcObject _requestFrameRate:targetFrameRate];
 	}
-	
+
 	OSStatus status=VTCompressionSessionCreate(NULL, width, height, codecType, NULL, NULL, NULL, [](void *outputCallbackRefCon, void *sourceFrameRefCon, OSStatus status, VTEncodeInfoFlags infoFlags, CMSampleBufferRef sampleBuffer){
 		reinterpret_cast<VideoToolboxEncoderSource*>(outputCallbackRefCon)->EncoderCallback(status, sampleBuffer, infoFlags);
 	}, this, &session);
@@ -121,8 +121,8 @@ void VideoToolboxEncoderSource::EncodeFrame(CMSampleBufferRef frame){
 	if(bitrateChangeRequested){
 		LOGI("VideoToolboxEocnder: setting bitrate to %u", bitrateChangeRequested);
 		SetEncoderBitrateAndLimit(bitrateChangeRequested);
-    	lastBitrate=bitrateChangeRequested;
-    	bitrateChangeRequested=0;
+		lastBitrate=bitrateChangeRequested;
+		bitrateChangeRequested=0;
 	}
 	CFDictionaryRef frameProps=NULL;
 	if(keyframeRequested){
@@ -132,7 +132,7 @@ void VideoToolboxEncoderSource::EncodeFrame(CMSampleBufferRef frame){
 		frameProps=CFDictionaryCreate(NULL, keys, values, 1, NULL, NULL);
 		keyframeRequested=false;
 	}
-	
+
 	//CMVideoDimensions size=CMVideoFormatDescriptionGetDimensions(format);
 	//LOGD("EncodeFrame %d x %d", size.width, size.height);
 	CVImageBufferRef imgBuffer=CMSampleBufferGetImageBuffer(frame);
@@ -167,16 +167,16 @@ void VideoToolboxEncoderSource::EncoderCallback(OSStatus status, CMSampleBufferR
 	if(needUpdateStreamParams){
 		LOGI("VideoToolboxEncoder: Updating stream params");
 		CMFormatDescriptionRef format=CMSampleBufferGetFormatDescription(buffer);
-    	CMVideoDimensions size=CMVideoFormatDescriptionGetDimensions(format);
-    	width=size.width;
-    	height=size.height;
-    	csd.clear();
-    	if(codec==CODEC_AVC){
+		CMVideoDimensions size=CMVideoFormatDescriptionGetDimensions(format);
+		width=size.width;
+		height=size.height;
+		csd.clear();
+		if(codec==CODEC_AVC){
 			for(size_t i=0;i<2;i++){
 				const uint8_t* ps=NULL;
 				size_t pl=0;
-    			status=CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, i, &ps, &pl, NULL, NULL);
-    			CHECK_ERR(status, "CMVideoFormatDescriptionGetH264ParameterSetAtIndex");
+				status=CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, i, &ps, &pl, NULL, NULL);
+				CHECK_ERR(status, "CMVideoFormatDescriptionGetH264ParameterSetAtIndex");
 				Buffer b(pl+4);
 				b.CopyFrom(ps, 4, pl);
 				b.CopyFrom(startCode, 0, 4);
@@ -203,15 +203,15 @@ void VideoToolboxEncoderSource::EncoderCallback(OSStatus status, CMSampleBufferR
 	CFArrayRef attachmentsArray=CMSampleBufferGetSampleAttachmentsArray(buffer, 0);
 	if(attachmentsArray && CFArrayGetCount(attachmentsArray)){
 		CFBooleanRef notSync;
-        CFDictionaryRef dict=(CFDictionaryRef)CFArrayGetValueAtIndex(attachmentsArray, 0);
-        BOOL keyExists=CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_NotSync, (const void **)&notSync);
-        if(!keyExists || !CFBooleanGetValue(notSync)){
+		CFDictionaryRef dict=(CFDictionaryRef)CFArrayGetValueAtIndex(attachmentsArray, 0);
+		BOOL keyExists=CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_NotSync, (const void **)&notSync);
+		if(!keyExists || !CFBooleanGetValue(notSync)){
 			frameFlags |= VIDEO_FRAME_FLAG_KEYFRAME;
 		}
 	}else{
 		frameFlags |= VIDEO_FRAME_FLAG_KEYFRAME;
 	}
-	
+
 	Buffer frame(len);
 	CMBlockBufferCopyDataBytes(blockBuffer, 0, len, *frame);
 	uint32_t offset=0;
@@ -222,14 +222,14 @@ void VideoToolboxEncoderSource::EncoderCallback(OSStatus status, CMSampleBufferR
 		offset+=nalLen+4;
 	}
 	callback(std::move(frame), frameFlags, rotation);
-	
+
 	//LOGV("EncoderCallback: %u bytes total", (unsigned int)len);
 }
 
 void VideoToolboxEncoderSource::SetEncoderBitrateAndLimit(uint32_t bitrate){
 	OSStatus status=VTSessionSetProperty(session, kVTCompressionPropertyKey_AverageBitRate, (__bridge CFTypeRef)@(bitrate));
 	CHECK_ERR(status, "VTSessionSetProperty(AverageBitRate)");
-	
+
 	int64_t dataLimitValue=(int64_t)(bitrate/8);
 	CFNumberRef bytesPerSecond=CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt64Type, &dataLimitValue);
 	int64_t oneValue=1;
@@ -249,7 +249,7 @@ bool VideoToolboxEncoderSource::SupportsFullHD(){
 }
 
 void VideoToolboxEncoderSource::SetStreamPaused(bool paused){
-	
+
 }
 
 std::vector<uint32_t> VideoToolboxEncoderSource::GetAvailableEncoders(){

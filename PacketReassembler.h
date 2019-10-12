@@ -33,10 +33,10 @@ namespace tgvoip {
 			bool isKeyframe;
 			uint16_t rotation;
 			std::vector<Buffer> parts;
-			
+
 			Packet(uint32_t seq, uint32_t timestamp, uint32_t partCount, uint32_t receivedPartCount, bool keyframe, uint16_t rotation)
-    			:seq(seq), timestamp(timestamp), partCount(partCount), receivedPartCount(receivedPartCount), isKeyframe(keyframe), rotation(rotation){
-			
+				:seq(seq), timestamp(timestamp), partCount(partCount), receivedPartCount(receivedPartCount), isKeyframe(keyframe), rotation(rotation){
+
 			}
 
 			void AddFragment(Buffer pkt, uint32_t fragmentIndex);

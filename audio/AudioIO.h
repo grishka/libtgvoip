@@ -30,7 +30,7 @@ namespace tgvoip{
 			bool failed=false;
 			std::string error;
 		};
-		
+
 		template<class I, class O> class ContextlessAudioIO : public AudioIO{
 		public:
 			ContextlessAudioIO(){
@@ -42,16 +42,16 @@ namespace tgvoip{
 				input=new I(inputDeviceID);
 				output=new O(outputDeviceID);
 			}
-			
+
 			virtual ~ContextlessAudioIO(){
 				delete input;
 				delete output;
 			}
-			
+
 			virtual AudioInput* GetInput(){
 				return input;
 			}
-			
+
 			virtual AudioOutput* GetOutput(){
 				return output;
 			}

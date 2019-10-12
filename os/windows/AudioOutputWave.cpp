@@ -38,7 +38,7 @@ AudioOutputWave::~AudioOutputWave(){
 void AudioOutputWave::Start(){
 	if(!isPlaying){
 		isPlaying=true;
-		
+
 		for(int i=0;i<4;i++){
 			MMRESULT res=waveOutPrepareHeader(hWaveOut, &buffers[i], sizeof(WAVEHDR));
 			CHECK_ERROR(res, "waveOutPrepareHeader failed");

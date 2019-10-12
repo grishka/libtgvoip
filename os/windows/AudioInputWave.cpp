@@ -40,7 +40,7 @@ AudioInputWave::~AudioInputWave(){
 void AudioInputWave::Start(){
 	if(!isRecording){
 		isRecording=true;
-			
+
 		MMRESULT res;
 		for(int i=0;i<4;i++){
 			res=waveInPrepareHeader(hWaveIn, &buffers[i], sizeof(WAVEHDR));
@@ -56,7 +56,7 @@ void AudioInputWave::Start(){
 void AudioInputWave::Stop(){
 	if(isRecording){
 		isRecording=false;
-		
+
 		MMRESULT res=waveInStop(hWaveIn);
 		CHECK_ERROR(res, "waveInStop failed");
 		res=waveInReset(hWaveIn);

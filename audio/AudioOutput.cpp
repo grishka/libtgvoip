@@ -101,7 +101,7 @@ std::string AudioOutput::GetCurrentDevice(){
 }
 
 void AudioOutput::SetCurrentDevice(std::string deviceID){
-	
+
 }
 
 bool AudioOutput::IsInitialized(){

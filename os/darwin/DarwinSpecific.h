@@ -10,9 +10,9 @@
 #include <string>
 
 namespace tgvoip {
-	
+
 	struct CellularCarrierInfo;
-	
+
 class DarwinSpecific{
 public:
 	enum{

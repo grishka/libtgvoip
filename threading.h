@@ -120,31 +120,31 @@ public:
 	Semaphore(unsigned int maxCount, unsigned int initValue){
 		sem = dispatch_semaphore_create(initValue);
 	}
-	
+
 	~Semaphore(){
 #if ! __has_feature(objc_arc)
-        dispatch_release(sem);
+		dispatch_release(sem);
 #endif
 	}
-	
+
 	void Acquire(){
 		dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
 	}
-	
+
 	void Release(){
 		dispatch_semaphore_signal(sem);
 	}
-	
+
 	void Acquire(int count){
 		for(int i=0;i<count;i++)
 			Acquire();
 	}
-	
+
 	void Release(int count){
 		for(int i=0;i<count;i++)
 			Release();
 	}
-	
+
 private:
 	dispatch_semaphore_t sem;
 };
@@ -340,7 +340,7 @@ private:
 namespace tgvoip{
 class MutexGuard{
 public:
-    MutexGuard(Mutex &mutex) : mutex(mutex) {
+	MutexGuard(Mutex &mutex) : mutex(mutex) {
 		mutex.Lock();
 	}
 	~MutexGuard(){
@@ -350,5 +350,5 @@ private:
 	Mutex &mutex;
 };
 }
-	
+
 #endif //__THREADING_H

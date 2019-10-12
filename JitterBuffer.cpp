@@ -118,7 +118,7 @@ size_t JitterBuffer::HandleOutput(unsigned char *buffer, size_t len, int offsetI
 				for(int i=0;i<JITTER_SLOT_COUNT;i++){
 					if(slots[i].timestamp==nextTimestamp){
 						if(!slots[i].buffer.IsEmpty()){
-    						slots[i].buffer=Buffer();
+							slots[i].buffer=Buffer();
 						}
 						break;
 					}
@@ -243,7 +243,7 @@ void JitterBuffer::PutInternal(jitter_packet_t* pkt, bool overwriteExisting){
 		first=true;
 		LOGI("jitter: resyncing, next timestamp = %lld (step=%d, minDelay=%f)", (long long int)nextTimestamp, step, minDelay);
 	}
-	
+
 	for(i=0;i<JITTER_SLOT_COUNT;i++){
 		if(!slots[i].buffer.IsEmpty()){
 			if(slots[i].timestamp<nextTimestamp-1){

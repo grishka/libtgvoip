@@ -48,7 +48,7 @@ NetworkSocketWinsock::~NetworkSocketWinsock(){
 }
 
 void NetworkSocketWinsock::SetMaxPriority(){
-	
+
 }
 
 void NetworkSocketWinsock::Send(NetworkPacket packet){
@@ -236,7 +236,7 @@ void NetworkSocketWinsock::Open(){
 			failed=true;
 			return;
 		}
-		
+
 		int res;
 		if(isAtLeastVista){
 			DWORD flag=0;
@@ -355,7 +355,7 @@ std::string NetworkSocketWinsock::GetLocalInterfaceInfo(NetworkAddress *v4addr, 
 	IP_ADAPTER_ADDRESSES* addrs=(IP_ADAPTER_ADDRESSES*)malloc(15*1024);
 	ULONG size=15*1024;
 	ULONG flags=GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
-	
+
 	ULONG res=GetAdaptersAddresses(AF_UNSPEC, flags, NULL, addrs, &size);
 	if(res==ERROR_BUFFER_OVERFLOW){
 		addrs=(IP_ADAPTER_ADDRESSES*)realloc(addrs, size);

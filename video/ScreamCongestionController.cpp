@@ -37,7 +37,7 @@ namespace{
 }
 
 ScreamCongestionController::ScreamCongestionController() : qdelayTarget(QDELAY_TARGET_LO), cwnd(MIN_CWND) {
-	
+
 }
 
 void ScreamCongestionController::UpdateVariables(float qdelay){
@@ -165,15 +165,15 @@ void ScreamCongestionController::CalculateSendWindow(float qdelay){
 }
 
 void ScreamCongestionController::ProcessAcks(float oneWayDelay, uint32_t bytesNewlyAcked, uint32_t lossCount, double rtt){
-    if(prevOneWayDelay!=0.0f){
-    	double currentTime=VoIPController::GetCurrentTime();
-    	float qdelay=oneWayDelay-prevOneWayDelay;
-    	sRTT=(float)rtt;
+	if(prevOneWayDelay!=0.0f){
+		double currentTime=VoIPController::GetCurrentTime();
+		float qdelay=oneWayDelay-prevOneWayDelay;
+		sRTT=(float)rtt;
 		bytesInFlight-=bytesNewlyAcked;
 		rtpQueueSize-=(bytesNewlyAcked*8);
 		UpdateBytesInFlightHistory();
 		bytesAcked+=bytesNewlyAcked;
-    	//LOGV("Scream: qdelay = %f, newly acked = %u, in flight = %u, losses = %u", qdelay, bytesNewlyAcked, bytesInFlight, lossCount);
+		//LOGV("Scream: qdelay = %f, newly acked = %u, in flight = %u, losses = %u", qdelay, bytesNewlyAcked, bytesInFlight, lossCount);
 		if(currentTime-lastVariablesUpdateTime>=0.050){
 			lastVariablesUpdateTime=currentTime;
 			UpdateVariables(qdelay);
@@ -183,35 +183,35 @@ void ScreamCongestionController::ProcessAcks(float oneWayDelay, uint32_t bytesNe
 			AdjustBitrate();
 			//LOGV("Scream: target bitrate = %u", targetBitrate);
 		}
-    	if(lossCount>prevLossCount && currentTime>ignoreLossesUntil){
-    		LOGD("Scream: loss detected");
-    		ignoreLossesUntil=currentTime+rtt;
-    		LOGD("ignoring losses for %f", rtt);
-    		inFastIncrease=false;
-    		cwnd=std::max(MIN_CWND, (uint32_t)(cwnd*BETA_LOSS));
-    		AdjustQDelayTarget(qdelay);
+		if(lossCount>prevLossCount && currentTime>ignoreLossesUntil){
+			LOGD("Scream: loss detected");
+			ignoreLossesUntil=currentTime+rtt;
+			LOGD("ignoring losses for %f", rtt);
+			inFastIncrease=false;
+			cwnd=std::max(MIN_CWND, (uint32_t)(cwnd*BETA_LOSS));
+			AdjustQDelayTarget(qdelay);
 			CalculateSendWindow(qdelay);
 			lossPending=true;
 			lastTimeQDelayTrendWasGreaterThanLo=currentTime;
-    	}else{
-    		this->bytesNewlyAcked+=bytesNewlyAcked;
-    		if(currentTime-lastCWndUpdateTime>=0.15){
-    			lastCWndUpdateTime=currentTime;
+		}else{
+			this->bytesNewlyAcked+=bytesNewlyAcked;
+			if(currentTime-lastCWndUpdateTime>=0.15){
+				lastCWndUpdateTime=currentTime;
 				UpdateCWnd(qdelay);
 				//LOGI("Scream: cwnd = %u", cwnd);
 				this->bytesNewlyAcked=0;
 			}
-    		AdjustQDelayTarget(qdelay);
-    		CalculateSendWindow(qdelay);
-    		if(!inFastIncrease){
-    			if(currentTime-lastTimeQDelayTrendWasGreaterThanLo>=T_RESUME_FAST_INCREASE){
-    				inFastIncrease=true;
-    			}
-    		}
-    	}
+			AdjustQDelayTarget(qdelay);
+			CalculateSendWindow(qdelay);
+			if(!inFastIncrease){
+				if(currentTime-lastTimeQDelayTrendWasGreaterThanLo>=T_RESUME_FAST_INCREASE){
+					inFastIncrease=true;
+				}
+			}
+		}
 		prevLossCount=lossCount;
-    }
-    prevOneWayDelay=oneWayDelay;
+	}
+	prevOneWayDelay=oneWayDelay;
 }
 
 void ScreamCongestionController::ProcessPacketSent(uint32_t size){

@@ -17,7 +17,7 @@ namespace tgvoip{
 
 class AudioInputDevice;
 class AudioOutputDevice;
-	
+
 namespace audio{
 class AudioOutput : public MediaStreamItf{
 public:

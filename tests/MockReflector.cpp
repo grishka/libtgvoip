@@ -37,7 +37,7 @@ MockReflector::MockReflector(std::string bindAddress, uint16_t bindPort){
 }
 
 MockReflector::~MockReflector(){
-	
+
 }
 
 std::array<std::array<uint8_t, 16>, 2> MockReflector::GeneratePeerTags(){
@@ -98,7 +98,7 @@ void MockReflector::RunThread(){
 				dest=&c.addr1;
 			}
 			clients[tagID]=c;
-			
+
 			if(specialID[0]==-1 && specialID[1]==-1 && specialID[2]==-1){
 				if(specialID[3]==-1){
 					continue;
@@ -115,13 +115,13 @@ void MockReflector::RunThread(){
 					continue;
 				}
 			}
-			
+
 			if(dest->sin_family==AF_INET && !dropAllPackets){
 				if(peerTag[15] & 1)
 					buf[15] &= 0xFE;
 				else
 					buf[15] |= 1;
-				
+
 				sendto(sfd, buf.data(), len, 0, (struct sockaddr*)dest, sizeof(sockaddr_in));
 			}
 		}

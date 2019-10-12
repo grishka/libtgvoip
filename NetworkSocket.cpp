@@ -486,7 +486,7 @@ bool NetworkSocketSOCKS5Proxy::OnReadyToReceive(){
 			// connected, no further auth needed
 			SendConnectionCommand();
 		}else if(chosenMethod==2 && !username.empty()){
-        	BufferOutputStream p(512);
+			BufferOutputStream p(512);
 			p.WriteByte(1); // VER
 			p.WriteByte((unsigned char)(username.length()>255 ? 255 : username.length())); // ULEN
 			p.WriteBytes((unsigned char*)username.c_str(), username.length()>255 ? 255 : username.length()); // UNAME
@@ -531,29 +531,29 @@ bool NetworkSocketSOCKS5Proxy::OnReadyToReceive(){
 	}else if(state==ConnectionState::WaitingForCommandResult){
 		size_t l=tcp->Receive(buf, sizeof(buf));
 		if(protocol==NetworkProtocol::TCP){
-    		if(l<2 || tcp->IsFailed()){
-    			LOGW("socks5: connect failed")
-    			failed=true;
-    			return false;
-    		}
-    		BufferInputStream in(buf, l);
-    		unsigned char ver=in.ReadByte();
-    		if(ver!=5){
-    			LOGW("socks5: connect: wrong ver in response");
-    			failed=true;
-    			return false;
-    		}
-    		unsigned char rep=in.ReadByte();
-    		if(rep!=0){
-    			LOGW("socks5: connect: failed with error %02X", rep);
-    			failed=true;
-    			return false;
-    		}
-    		LOGV("socks5: connect succeeded");
-    		state=ConnectionState::Connected;
-    		tcp=new NetworkSocketTCPObfuscated(tcp);
-    		readyToSend=true;
-    		return tcp->OnReadyToSend();
+			if(l<2 || tcp->IsFailed()){
+				LOGW("socks5: connect failed")
+				failed=true;
+				return false;
+			}
+			BufferInputStream in(buf, l);
+			unsigned char ver=in.ReadByte();
+			if(ver!=5){
+				LOGW("socks5: connect: wrong ver in response");
+				failed=true;
+				return false;
+			}
+			unsigned char rep=in.ReadByte();
+			if(rep!=0){
+				LOGW("socks5: connect: failed with error %02X", rep);
+				failed=true;
+				return false;
+			}
+			LOGV("socks5: connect succeeded");
+			state=ConnectionState::Connected;
+			tcp=new NetworkSocketTCPObfuscated(tcp);
+			readyToSend=true;
+			return tcp->OnReadyToSend();
 		}else if(protocol==NetworkProtocol::UDP){
 			if(l<2 || tcp->IsFailed()){
 				LOGW("socks5: udp associate failed");
@@ -601,7 +601,7 @@ bool NetworkSocketSOCKS5Proxy::OnReadyToReceive(){
 					return false;
 				}
 				connectedPort=(uint16_t)ntohs(in.ReadInt16());
-        		state=ConnectionState::Connected;
+				state=ConnectionState::Connected;
 				readyToSend=true;
 				LOGV("socks5: udp associate successful, given endpoint %s:%d", connectedAddress.ToString().c_str(), connectedPort);
 			}catch(std::out_of_range& x){

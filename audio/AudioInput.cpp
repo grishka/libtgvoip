@@ -89,7 +89,7 @@ std::string AudioInput::GetCurrentDevice(){
 }
 
 void AudioInput::SetCurrentDevice(std::string deviceID){
-	
+
 }
 
 int32_t AudioInput::GetEstimatedDelay(){

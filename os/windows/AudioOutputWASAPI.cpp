@@ -151,7 +151,7 @@ void AudioOutputWASAPI::EnumerateDevices(std::vector<tgvoip::AudioOutputDevice>&
 		res=device->OpenPropertyStore(STGM_READ, &propStore);
 		SafeRelease(&device);
 		SCHECK_RES(res, "OpenPropertyStore");
-		
+
 		PROPVARIANT friendlyName;
 		PropVariantInit(&friendlyName);
 		res=propStore->GetValue(PKEY_Device_FriendlyName, &friendlyName);
@@ -256,7 +256,7 @@ void AudioOutputWASAPI::ActuallySetCurrentDevice(std::string deviceID){
 		failed=true;
 		return;
 	}
-	
+
 	res=device->Activate(__uuidof(IAudioClient), CLSCTX_INPROC_SERVER, NULL, (void**)&audioClient);
 	CHECK_RES(res, "device->Activate");
 #else
@@ -383,7 +383,7 @@ void AudioOutputWASAPI::RunThread() {
 			//double t=VoIPController::GetCurrentTime();
 			//LOGV("framesAvail: %u, time: %f, isPlaying: %d", framesAvailable, t-prevCallback, isPlaying);
 			//prevCallback=t;
-			
+
 			size_t bytesAvailable=framesAvailable*2;
 			while(bytesAvailable>remainingDataLen){
 				if(isPlaying){

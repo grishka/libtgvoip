@@ -179,7 +179,7 @@ void tgvoip::OpusEncoder::RunThread(){
 				Encode(packet, 960);
 			}else{
 				memcpy(frame+(960*bufferedCount), packet, 960*2);
-    			frameHasVoice=frameHasVoice || hasVoice;
+				frameHasVoice=frameHasVoice || hasVoice;
 				bufferedCount++;
 				if(bufferedCount==packetsPerFrame){
 					if(vadMode){
